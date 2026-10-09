@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { LEVELS } from "../logic/rules";
 import { loadSave, persist } from "../save";
 import { W } from "../config";
+import { addMuteButton, unlockAudio, playBgm, AUDIO_KEYS } from "../audio";
 
 const HINTS = [
   "红珠抬攻击", "裂击解锁", "绿珠回血", "黄珠职业增效",
@@ -13,10 +14,12 @@ export class SelectScene extends Phaser.Scene {
   constructor() { super("select"); }
 
   create() {
+    addMuteButton(this, () => playBgm(this, AUDIO_KEYS.bgmMenu));
+    playBgm(this, AUDIO_KEYS.bgmMenu);
     const save = loadSave();
     this.add.rectangle(0, 0, W, 2000, 0x1a120c).setOrigin(0);
     this.add.text(16, 16, "第一章 · 地牢初燃", { fontSize: "22px", color: "#e6d3b0" });
-    this.add.text(W - 16, 22, `已通关 ${save.cleared.filter(Boolean).length} / 10`, { fontSize: "12px", color: "#8a7355" }).setOrigin(1, 0);
+    this.add.text(W - 90, 22, `已通关 ${save.cleared.filter(Boolean).length} / 10`, { fontSize: "12px", color: "#8a7355" }).setOrigin(1, 0);
 
     let y = 60;
     LEVELS.forEach((lv: any, i: number) => {
@@ -29,7 +32,7 @@ export class SelectScene extends Phaser.Scene {
       const hint = this.add.text(58, 30, unlocked ? HINTS[i] : "未解锁", { fontSize: "11px", color: "#8a7355" });
       row.add([bg, img, title, hint]);
       if (unlocked) {
-        bg.on("pointerdown", () => this.scene.start("prep", { levelIndex: i }));
+        bg.on("pointerdown", () => { unlockAudio(this); this.scene.start("prep", { levelIndex: i }); });
       }
       y += 64;
     });

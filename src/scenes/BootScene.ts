@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { loadAudio } from "../audio";
 
 const KINDS = ["01","02","03","04","05","06","07","08","09","10"];
 const POSES = ["idle","walk","attack","down"] as const;
@@ -35,6 +36,7 @@ export class BootScene extends Phaser.Scene {
     for (const p of ["idle-0","idle-1","walk-0","walk-1","walk-2","walk-3","attack-0","attack-1","attack-2"]) {
       this.load.image(`hero-${p}`, `art/frames/hero-${p}.png`);
     }
+    loadAudio(this);
   }
 
   create() {

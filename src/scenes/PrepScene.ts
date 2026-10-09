@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { LEVELS, HERO_STATS, CLASS_NAMES } from "../logic/rules";
 import { loadSave, persist, ClassId } from "../save";
 import { W } from "../config";
+import { addMuteButton, unlockAudio, playBgm, AUDIO_KEYS } from "../audio";
 
 const BLURB: Record<ClassId, string> = {
   out: "力量高。黄珠再抬攻击 30%，4 秒。",
@@ -23,6 +24,8 @@ export class PrepScene extends Phaser.Scene {
   }
 
   create() {
+    addMuteButton(this, () => playBgm(this, AUDIO_KEYS.bgmMenu));
+    playBgm(this, AUDIO_KEYS.bgmMenu);
     const save = loadSave();
     const lv = LEVELS[this.levelIndex] as any;
     this.add.rectangle(0, 0, W, 2000, 0x1a120c).setOrigin(0);
@@ -61,7 +64,7 @@ export class PrepScene extends Phaser.Scene {
 
     const fight = this.add.rectangle(W / 2, 530, 220, 48, 0x5a3b28).setStrokeStyle(2, 0xc9a227).setInteractive({ useHandCursor: true });
     this.add.text(W / 2, 530, "开始战斗", { fontSize: "18px", color: "#f3e6c0" }).setOrigin(0.5);
-    fight.on("pointerdown", () => this.scene.start("battle", { levelIndex: this.levelIndex }));
+    fight.on("pointerdown", () => { unlockAudio(this); this.scene.start("battle", { levelIndex: this.levelIndex }); });
 
     const back = this.add.text(W / 2, 580, "返回选关", { fontSize: "14px", color: "#a89070" }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     back.on("pointerdown", () => this.scene.start("select"));

@@ -8,6 +8,7 @@ import {
 } from "../logic/rules";
 import { loadSave, persist } from "../save";
 import { W } from "../config";
+import { addMuteButton, unlockAudio, playBgm, playSfx, stopBgm, AUDIO_KEYS } from "../audio";
 
 const CELL = 36;
 const BEAD = 36;
@@ -65,6 +66,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create() {
+    unlockAudio(this);
+    addMuteButton(this, () => playBgm(this, AUDIO_KEYS.bgmBattle));
+    playBgm(this, AUDIO_KEYS.bgmBattle);
     const save = loadSave();
     const lv = LEVELS[this.levelIndex] as any;
     this.battle = makeBattleState(lv, save.classId, save.amulet);
@@ -517,6 +521,7 @@ export class BattleScene extends Phaser.Scene {
     this.heroSpr.play("hero-attack");
     const dmg = unitAttack(this.battle.hero, now, !!LEVELS[this.levelIndex].sword);
     const hits = dealDamage(this.battle, target.id, dmg, false);
+    if (hits.length) playSfx(this, AUDIO_KEYS.hit);
     for (const h of hits) {
       const spr = this.mobSpr.get(h.id);
       if (spr) {
@@ -544,6 +549,7 @@ export class BattleScene extends Phaser.Scene {
     spr?.play(`e${m.kind}-attack`);
     const dmg = unitAttack(m, now, false);
     const hit = strikeHero(this.battle, dmg);
+    playSfx(this, AUDIO_KEYS.hurt);
     this.flashHit(this.heroSpr.x, this.heroSpr.y);
     this.floatNum(this.heroSpr.x, this.heroSpr.y, `-${dmg}`, "#ff8a8a");
     this.refreshHud();
@@ -583,6 +589,7 @@ export class BattleScene extends Phaser.Scene {
 
   private async trySwap(r1: number, c1: number, r2: number, c2: number) {
     this.busy = true;
+    playSfx(this, AUDIO_KEYS.swap);
     const b1 = this.beads[r1][c1]!;
     const b2 = this.beads[r2][c2]!;
     await this.tweenMove(b1, this.beadX(c2), this.beadY(r2));
@@ -627,12 +634,17 @@ export class BattleScene extends Phaser.Scene {
       const now = this.elapsed();
       const results = groups.map((g: any) => resolveGroup(g, this.battle, ctx, now));
       this.pushLog((steps > 1 ? "连锁 " : "") + results.map((r: any) => r.text).join("；"));
+      let bestTier = 3;
       for (const r of results) {
+        if (r.tier > bestTier) bestTier = r.tier;
         if (r.tier >= 4) this.flashTier(r.tier);
         if (r.tier >= 5 && (r.color === "r" || (r.color === "y" && save.classId === "out"))) {
           this.redGlow.setVisible(true);
         }
       }
+      if (bestTier >= 5) playSfx(this, AUDIO_KEYS.match5);
+      else if (bestTier >= 4) playSfx(this, AUDIO_KEYS.match4);
+      else playSfx(this, AUDIO_KEYS.match);
       // pop
       for (let gi = 0; gi < groups.length; gi++) {
         const g = groups[gi];
@@ -724,6 +736,7 @@ export class BattleScene extends Phaser.Scene {
     if (!canCast(kind, this.battle, ctx, now)) return;
     const result = castSkill(kind, this.battle, ctx, now);
     if (!result) return;
+    playSfx(this, AUDIO_KEYS.skill);
     this.pushLog(result.text);
     if (result.slow) {
       const lock = getLock(this.battle);
@@ -733,6 +746,7 @@ export class BattleScene extends Phaser.Scene {
       const tgt = getLock(this.battle);
       if (tgt) {
         const hits = dealDamage(this.battle, tgt.id, result.attack, kind === "slash");
+        if (hits.length) playSfx(this, AUDIO_KEYS.hit);
         for (const h of hits) {
           const spr = this.mobSpr.get(h.id);
           if (spr) {
@@ -753,6 +767,7 @@ export class BattleScene extends Phaser.Scene {
     this.autoStopped = false;
     this.hideSel();
     this.refreshHud();
+    playSfx(this, win ? AUDIO_KEYS.win : AUDIO_KEYS.lose);
     const save = loadSave();
     if (win) {
       save.cleared[this.levelIndex] = true;

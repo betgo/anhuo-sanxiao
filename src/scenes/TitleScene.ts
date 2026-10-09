@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { loadSave } from "../save";
 import { W, H } from "../config";
+import { addMuteButton, unlockAudio, playBgm, AUDIO_KEYS } from "../audio";
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super("title"); }
@@ -21,8 +22,15 @@ export class TitleScene extends Phaser.Scene {
     });
     const btn = this.add.rectangle(W / 2, 460, 200, 48, 0x5a3b28).setStrokeStyle(2, 0xc9a227).setInteractive({ useHandCursor: true });
     this.add.text(W / 2, 460, "进入地牢", { fontSize: "18px", color: "#f3e6c0" }).setOrigin(0.5);
-    btn.on("pointerdown", () => this.scene.start("select"));
+    btn.on("pointerdown", () => {
+      unlockAudio(this);
+      playBgm(this, AUDIO_KEYS.bgmMenu);
+      this.scene.start("select");
+    });
     this.add.text(W / 2, 520, `第一章进度 ${n} / 10`, { fontSize: "13px", color: "#8a7355" }).setOrigin(0.5);
     this.add.text(W / 2, 560, "Phaser 3 · Vite", { fontSize: "11px", color: "#6a5540" }).setOrigin(0.5);
+    addMuteButton(this, () => playBgm(this, AUDIO_KEYS.bgmMenu));
+    // try play if already unlocked / not muted
+    playBgm(this, AUDIO_KEYS.bgmMenu);
   }
 }
