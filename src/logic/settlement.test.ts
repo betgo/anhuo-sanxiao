@@ -7,7 +7,9 @@ const ROOT = join(__dirname, "../..");
 const battleSrc = readFileSync(join(ROOT, "src/scenes/BattleScene.ts"), "utf8");
 
 function method(name: string): string {
-  const re = new RegExp(`private ${name}\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n  \\}`);
+  const re = new RegExp(
+    `private (?:async )?${name}\\([^)]*\\)(?:\\s*:\\s*[^{]+)?\\s*\\{[\\s\\S]*?\\n  \\}`,
+  );
   const m = battleSrc.match(re);
   expect(m, `method ${name}`).toBeTruthy();
   return m![0];
@@ -90,5 +92,71 @@ describe("settlement — no scene pause / elite render hooks", () => {
     expect(battleSrc).toMatch(/setDisplaySize\(big\s*\?\s*58\s*:\s*48,\s*big\s*\?\s*66\s*:\s*54\)/);
     expect(battleSrc).toMatch(/if \(m\.elite\) spr\.setTint\(0xffe0a0\)/);
     expect(battleSrc).toMatch(/"精英"/);
+  });
+});
+
+
+describe("settlement — death anim before win/wave", () => {
+  it("last hit clears corpses then settles; no instant finish on allDead in attack", () => {
+    expect(battleSrc).toMatch(/clearDeadActors/);
+    expect(battleSrc).toMatch(/animateDeathOut/);
+    expect(battleSrc).toMatch(/trySettleOrWave/);
+    const heroAtk = method("doHeroAttack");
+    expect(heroAtk).toMatch(/afterCombatHits/);
+    expect(heroAtk).not.toMatch(/if \(allDead\(this\.battle\)\) this\.finish\(true\)/);
+    expect(battleSrc).toMatch(/alpha:\s*0/);
+    expect(battleSrc).toMatch(/mobSpr\.delete/);
+  });
+});
+
+describe("settlement — death before win/wave (strict)", () => {
+  it("afterCombatHits awaits clearDeadActors then trySettleOrWave", () => {
+    const after = method("afterCombatHits");
+    expect(after).toMatch(/await this\.clearDeadActors\(deadIds\)/);
+    expect(after).toMatch(/this\.trySettleOrWave\(\)/);
+    const awaitIdx = after.indexOf("await this.clearDeadActors");
+    const settleIdx = after.indexOf("this.trySettleOrWave()");
+    expect(awaitIdx).toBeGreaterThanOrEqual(0);
+    expect(settleIdx).toBeGreaterThan(awaitIdx);
+  });
+
+  it("animateDeathOut plays down, fades out, destroys sprite and deletes mobSpr", () => {
+    const anim = method("animateDeathOut");
+    expect(anim).toMatch(/e\$\{m\.kind\}-down/);
+    expect(anim).toMatch(/spr\.play\(key\)/);
+    expect(anim).toMatch(/alpha:\s*0/);
+    expect(anim).toMatch(/spr\.destroy\(\)/);
+    expect(anim).toMatch(/this\.mobSpr\.delete\(id\)/);
+    expect(anim).toMatch(/this\.mobBars\.delete\(id\)/);
+  });
+
+  it("trySettleOrWave blocks while clearingDeaths; win only after no corpses", () => {
+    const settle = method("trySettleOrWave");
+    expect(settle).toMatch(/if \(this\.over \|\| this\.clearingDeaths\) return/);
+    expect(settle).toMatch(/tryAdvanceWave/);
+    expect(settle).toMatch(/wave\.done && allDead/);
+    expect(settle).toMatch(/m\.hp <= 0 && this\.mobSpr\.has/);
+    expect(settle).toMatch(/clearDeadActors/);
+    expect(settle).toMatch(/this\.finish\(true\)/);
+    const finishIdx = settle.indexOf("this.finish(true)");
+    const leftCheck = settle.indexOf("mobSpr.has");
+    expect(leftCheck).toBeGreaterThanOrEqual(0);
+    expect(finishIdx).toBeGreaterThan(leftCheck);
+  });
+
+  it("update clears corpses before settle/wave; skill path also uses afterCombatHits", () => {
+    const update = battleSrc.match(/update\([^)]*\)\s*\{[\s\S]*?\n  \}/)?.[0] ?? "";
+    expect(update).toMatch(/clearingDeaths/);
+    expect(update).toMatch(/clearDeadActors\(corpseIds\)\.then\(\(\) => this\.trySettleOrWave\(\)\)/);
+    const cast = method("onCast");
+    expect(cast).toMatch(/afterCombatHits\(hits\)/);
+    expect(cast).not.toMatch(/this\.finish\(true\)/);
+  });
+
+  it("clearDeadActors sets clearingDeaths and runs animateDeathOut for each id", () => {
+    const clear = method("clearDeadActors");
+    expect(clear).toMatch(/this\.clearingDeaths\s*=\s*true/);
+    expect(clear).toMatch(/animateDeathOut\(id\)/);
+    expect(clear).toMatch(/this\.clearingDeaths\s*=\s*false/);
   });
 });

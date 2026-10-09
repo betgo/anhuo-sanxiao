@@ -36,6 +36,7 @@ export class BattleScene extends Phaser.Scene {
   private sel: { r: number; c: number } | null = null;
   private busy = false;
   private over = false;
+  private clearingDeaths = false;
   private t0 = 0;
   private hpText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
@@ -362,17 +363,95 @@ export class BattleScene extends Phaser.Scene {
       }
     }
     if (this.over) return;
+    if (!this.clearingDeaths) {
+      const corpseIds = this.battle.monsters
+        .filter((m: any) => m.hp <= 0 && this.mobSpr.has(m.id))
+        .map((m: any) => m.id);
+      if (corpseIds.length) {
+        void this.clearDeadActors(corpseIds).then(() => this.trySettleOrWave());
+      } else {
+        this.trySettleOrWave();
+      }
+    }
+    this.placeActors();
+    this.refreshHud();
+  }
+
+  private trySettleOrWave() {
+    if (this.over || this.clearingDeaths) return;
+    const now = this.elapsed();
     const wave = tryAdvanceWave(this.battle, now);
     if (wave.advanced) {
       this.spawnWaveActors(wave.spawned || []);
       this.showWaveBanner(wave.waveIndex + 1);
       this.pushLog(`第 ${wave.waveIndex + 1} 波来袭`);
-    } else if (wave.done && allDead(this.battle)) {
-      this.finish(true);
       return;
     }
-    this.placeActors();
-    this.refreshHud();
+    if (wave.done && allDead(this.battle)) {
+      // ensure no leftover corpses before banner
+      const left = this.battle.monsters.filter((m: any) => m.hp <= 0 && this.mobSpr.has(m.id));
+      if (left.length) {
+        void this.clearDeadActors(left.map((m: any) => m.id)).then(() => this.trySettleOrWave());
+        return;
+      }
+      this.finish(true);
+    }
+  }
+
+  private clearDeadActors(ids: number[]): Promise<void> {
+    const uniq = Array.from(new Set(ids)).filter((id) => this.mobSpr.has(id));
+    if (!uniq.length) return Promise.resolve();
+    this.clearingDeaths = true;
+    return Promise.all(uniq.map((id) => this.animateDeathOut(id))).then(() => {
+      this.clearingDeaths = false;
+    });
+  }
+
+  private animateDeathOut(id: number): Promise<void> {
+    return new Promise((resolve) => {
+      const m = this.battle.monsters.find((x: any) => x.id === id);
+      const spr = this.mobSpr.get(id);
+      const bar = this.mobBars.get(id);
+      if (!spr) {
+        resolve();
+        return;
+      }
+      bar?.bg.setVisible(false);
+      bar?.fill.setVisible(false);
+      if (bar?.tag) bar.tag.setVisible(false);
+      const done = () => {
+        this.tweens.add({
+          targets: spr,
+          alpha: 0,
+          duration: 280,
+          onComplete: () => {
+            spr.destroy();
+            this.mobSpr.delete(id);
+            if (bar) {
+              bar.bg.destroy();
+              bar.fill.destroy();
+              bar.tag?.destroy();
+              this.mobBars.delete(id);
+            }
+            resolve();
+          },
+        });
+      };
+      const key = m ? `e${m.kind}-down` : "";
+      if (m && spr.anims && this.anims.exists(key)) {
+        spr.play(key);
+        let finished = false;
+        const finishOnce = () => {
+          if (finished) return;
+          finished = true;
+          done();
+        };
+        spr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, finishOnce);
+        this.time.delayedCall(700, finishOnce);
+      } else {
+        done();
+      }
+    });
   }
 
   private flashTier(tier: number) {
@@ -450,7 +529,13 @@ export class BattleScene extends Phaser.Scene {
     this.heroSpr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       if (!this.over) this.heroSpr.play("hero-idle");
     });
-    if (allDead(this.battle)) this.finish(true);
+    void this.afterCombatHits(hits);
+  }
+
+  private async afterCombatHits(hits: any[]) {
+    const deadIds = hits.filter((h: any) => h.dead).map((h: any) => h.id);
+    if (deadIds.length) await this.clearDeadActors(deadIds);
+    this.trySettleOrWave();
   }
 
   private doMobAttack(m: any, now: number) {
@@ -655,10 +740,8 @@ export class BattleScene extends Phaser.Scene {
             this.floatNum(spr.x, spr.y, `-${h.dmg}`, "#fff0a0");
           }
         }
-        if (allDead(this.battle)) {
-          this.finish(true);
-          return;
-        }
+        void this.afterCombatHits(hits);
+        return;
       }
     }
     this.refreshHud();
