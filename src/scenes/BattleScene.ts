@@ -42,6 +42,10 @@ export class BattleScene extends Phaser.Scene {
   private slashBtn!: Phaser.GameObjects.Container;
   private ultBtn!: Phaser.GameObjects.Container;
   private logs: string[] = [];
+  private resultRoot?: Phaser.GameObjects.Container;
+  private autoTimer?: Phaser.Time.TimerEvent;
+  private autoLeft = 0;
+  private autoStopped = false;
 
   constructor() { super("battle"); }
 
@@ -133,6 +137,7 @@ export class BattleScene extends Phaser.Scene {
     this.slashBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 - 80, 700, "裂击", () => this.onCast("slash"));
     this.ultBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 + 80, 700, "职业技", () => this.onCast("ult"));
 
+    this.events.once("shutdown", () => this.clearAuto());
     this.pushLog(`第 ${this.levelIndex + 1} 关 · ${lv.name}`);
     this.refreshHud();
     this.placeActors();
@@ -517,6 +522,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.over) return;
     this.over = true;
     this.busy = true;
+    this.autoStopped = false;
     this.hideSel();
     this.refreshHud();
     const save = loadSave();
@@ -525,9 +531,95 @@ export class BattleScene extends Phaser.Scene {
       persist(save);
     }
     const living = this.battle.monsters.filter((m: any) => m.hp > 0).length;
+    const isLast = this.levelIndex >= LEVELS.length - 1;
     const detail = win
-      ? `全部击倒。剩余生命 ${Math.max(0, this.battle.hero.hp)}。`
+      ? (isLast
+        ? `章节完成。剩余生命 ${Math.max(0, this.battle.hero.hp)}。`
+        : `全部击倒。剩余生命 ${Math.max(0, this.battle.hero.hp)}。`)
       : `你倒下了。还剩 ${living} 只。装备还在。`;
-    this.scene.start("result", { win, levelIndex: this.levelIndex, detail });
+    this.showResultOverlay(win, detail, isLast);
   }
+
+  private clearAuto() {
+    if (this.autoTimer) {
+      this.autoTimer.remove(false);
+      this.autoTimer = undefined;
+    }
+  }
+
+  private showResultOverlay(win: boolean, detail: string, isLast: boolean) {
+    this.clearAuto();
+    this.resultRoot?.destroy(true);
+
+    const root = this.add.container(0, 0).setDepth(2000);
+    this.resultRoot = root;
+    const bg = this.add.rectangle(W / 2, 360, BOARD_W + 24, 200, 0x120c08, 0.92)
+      .setStrokeStyle(2, win ? 0xc9a227 : 0x8a4040);
+    const title = this.add.text(W / 2, 300, win ? (isLast ? "章节完成" : "胜利") : "失败", {
+      fontSize: "28px", color: win ? "#c9a227" : "#e08080",
+    }).setOrigin(0.5);
+    const body = this.add.text(W / 2, 340, detail, {
+      fontSize: "13px", color: "#cbb892", align: "center", wordWrap: { width: BOARD_W - 16 },
+    }).setOrigin(0.5, 0);
+    const cd = this.add.text(W / 2, 390, "", { fontSize: "14px", color: "#a89070" }).setOrigin(0.5);
+    root.add([bg, title, body, cd]);
+
+    const addBtn = (x: number, y: number, label: string, fn: () => void) => {
+      const r = this.add.rectangle(x, y, 110, 36, 0x5a3b28).setStrokeStyle(2, 0xc9a227)
+        .setInteractive({ useHandCursor: true });
+      const tx = this.add.text(x, y, label, { fontSize: "14px", color: "#f3e6c0" }).setOrigin(0.5);
+      r.on("pointerdown", fn);
+      root.add([r, tx]);
+      return r;
+    };
+
+    const goSelect = () => {
+      this.clearAuto();
+      this.scene.start("select");
+    };
+
+    if (win && isLast) {
+      cd.setText("本章已通关");
+      addBtn(W / 2, 440, "回选关", goSelect);
+      return;
+    }
+
+    this.autoLeft = 5;
+    const actionLabel = win ? "下一关" : "重试";
+    const doAuto = () => {
+      this.clearAuto();
+      if (win) this.scene.restart({ levelIndex: this.levelIndex + 1 });
+      else this.scene.restart({ levelIndex: this.levelIndex });
+    };
+    const refreshCd = () => {
+      if (this.autoStopped) {
+        cd.setText("已停止自动");
+      } else {
+        cd.setText(`${this.autoLeft} 秒后自动${actionLabel}`);
+      }
+    };
+    refreshCd();
+    this.autoTimer = this.time.addEvent({
+      delay: 1000,
+      repeat: 4,
+      callback: () => {
+        if (this.autoStopped) return;
+        this.autoLeft -= 1;
+        refreshCd();
+        if (this.autoLeft <= 0) doAuto();
+      },
+    });
+
+    addBtn(W / 2 - 120, 440, "停止", () => {
+      if (this.autoStopped) return;
+      this.autoStopped = true;
+      this.clearAuto();
+      refreshCd();
+      addBtn(W / 2 - 60, 480, actionLabel, doAuto);
+      addBtn(W / 2 + 60, 480, "回选关", goSelect);
+    });
+    addBtn(W / 2 + 120, 440, "回选关", goSelect);
+  }
+
 }
+

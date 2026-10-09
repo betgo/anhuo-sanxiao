@@ -49,6 +49,7 @@ describe("P0 — BattleScene bead draw / select", () => {
     expect(src).toMatch(/if \(this\.battle\.hero\.hp <= 0\) this\.finish\(false\)/);
     expect(src).toMatch(/private doHeroAttack[\s\S]*?if \(this\.over \|\| this\.battle\.hero\.hp <= 0\) return/);
     expect(src).toMatch(/private doMobAttack[\s\S]*?if \(this\.over \|\| this\.battle\.hero\.hp <= 0\) return/);
-    expect(src).toMatch(/private finish\(win: boolean\)[\s\S]*?this\.scene\.start\("result"/);
+    expect(src).toMatch(/private finish\(win: boolean\)[\s\S]*?this\.showResultOverlay/);
+    expect(src).not.toMatch(/this\.scene\.start\("result"/);
   });
 });
