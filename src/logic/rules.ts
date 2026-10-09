@@ -29,25 +29,68 @@ let HERO_STATS = {
 };
 let CLASS_NAMES = { out: "输出", surv: "生存", ctrl: "控制" };
 
-function mon(kind, name, hp, str, intel, agi, ranged) {
-  return { kind: kind, name: name, hp: hp, str: str, int: intel, agi: agi, ranged: !!ranged };
+function mon(kind, name, hp, str, intel, agi, ranged, elite) {
+  return {
+    kind: kind,
+    name: name,
+    hp: hp,
+    str: str,
+    int: intel,
+    agi: agi,
+    ranged: !!ranged,
+    elite: !!elite,
+    boss: kind === "10"
+  };
 }
+function eliteOf(m) {
+  return mon(
+    m.kind,
+    m.name,
+    Math.round(m.hp * 1.8),
+    Math.round(m.str * 1.3),
+    m.int,
+    m.agi,
+    m.ranged,
+    true
+  );
+}
+function nOf(template, count) {
+  var arr = [];
+  for (var i = 0; i < count; i++) arr.push(Object.assign({}, template));
+  return arr;
+}
+var BONE = mon("01", "游荡骨兵", 24, 6, 2, 4);
+var FLAME = mon("02", "蓝焰鬼火", 30, 5, 6, 5);
+var RAT = mon("03", "腐疫鼠", 24, 5, 3, 7);
+var STATUE = mon("04", "试炼石像", 35, 7, 5, 3, true);
+var SKULL = mon("05", "持盾骷髅", 33, 8, 3, 4);
+var RUNNER = mon("06", "疾行鬼", 28, 6, 3, 10);
+var GUARD = mon("07", "锈蚀守卫", 50, 10, 3, 4);
+var GOLEM = mon("08", "咒印魔像", 60, 8, 9, 3, true);
+var AXE = mon("09", "重斧魔", 50, 12, 3, 5);
+var LORD = mon("10", "地牢领主", 120, 14, 8, 5, true);
 let SQUADS = [
-  [mon("01", "游荡骨兵", 24, 6, 2, 4), mon("01", "游荡骨兵", 24, 6, 2, 4)],
-  [mon("02", "蓝焰鬼火", 30, 5, 6, 5), mon("02", "蓝焰鬼火", 30, 5, 6, 5)],
-  [mon("03", "腐疫鼠", 24, 5, 3, 7), mon("03", "腐疫鼠", 24, 5, 3, 7)],
-  [mon("04", "试炼石像", 35, 7, 5, 3, true), mon("04", "试炼石像", 35, 7, 5, 3, true)],
-  [mon("05", "持盾骷髅", 33, 8, 3, 4), mon("05", "持盾骷髅", 33, 8, 3, 4)],
-  [mon("06", "疾行鬼", 28, 6, 3, 10), mon("06", "疾行鬼", 28, 6, 3, 10), mon("06", "疾行鬼", 28, 6, 3, 10)],
-  [mon("07", "锈蚀守卫", 50, 10, 3, 4), mon("07", "锈蚀守卫", 50, 10, 3, 4)],
-  [mon("08", "咒印魔像", 60, 8, 9, 3, true), mon("08", "咒印魔像", 60, 8, 9, 3, true)],
-  [mon("09", "重斧魔", 50, 12, 3, 5), mon("09", "重斧魔", 50, 12, 3, 5)],
-  [mon("01", "游荡骨兵", 24, 6, 2, 4), mon("01", "游荡骨兵", 24, 6, 2, 4), mon("10", "地牢领主", 120, 14, 8, 5, true)]
+  nOf(BONE, 3),
+  nOf(FLAME, 3),
+  nOf(RAT, 4),
+  nOf(STATUE, 3).concat([eliteOf(STATUE)]),
+  nOf(SKULL, 4).concat([eliteOf(SKULL)]),
+  nOf(RUNNER, 5).concat([eliteOf(RUNNER)]),
+  nOf(GUARD, 4).concat([eliteOf(GUARD)]),
+  nOf(GOLEM, 3).concat([eliteOf(GOLEM), eliteOf(GOLEM)]),
+  nOf(AXE, 4).concat([eliteOf(AXE), eliteOf(AXE)]),
+  nOf(BONE, 4).concat([eliteOf(BONE), LORD])
 ];
-let STACKS = {
-  2: [{ x: 5.2, y: 0.2 }, { x: 6.4, y: 0.55 }],
-  3: [{ x: 5.0, y: 0.15 }, { x: 6.1, y: 0.5 }, { x: 7.2, y: 0.25 }]
-};
+function stackFor(n) {
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    out.push({
+      x: 4.6 + i * 0.48,
+      y: 0.08 + (i % 3) * 0.18
+    });
+  }
+  return out;
+}
 let LEVELS = [
   { name: "游荡骨兵", blue: false, green: false, yellow: false, sword: false, slash: false, ult: false, startHp: 34, teach: "三消只增效。红珠短时抬攻击，本关怪会自己走进来打。" },
   { name: "蓝焰鬼火", blue: true, green: false, yellow: false, sword: false, slash: true, ult: false, startHp: 34, teach: "蓝珠攒技能并临时加智力。裂击已解锁，有冷却。" },
@@ -262,7 +305,7 @@ function unitAttack(u, now, sword) {
 
 function makeBattleState(lv, classId, amulet) {
   var st = HERO_STATS[classId] || HERO_STATS.out;
-  var stack = STACKS[lv.squad.length];
+  var stack = stackFor(lv.squad.length);
   var monsters = lv.squad.map(function (src, i) {
     return {
       id: i + 1,
@@ -275,16 +318,17 @@ function makeBattleState(lv, classId, amulet) {
       int: src.int,
       agi: src.agi,
       range: src.ranged ? 3 : 1,
+      elite: !!src.elite,
       x: stack[i].x,
       y: stack[i].y,
       homeX: stack[i].x,
       homeY: stack[i].y,
       enter: i,
-      nextAt: 0.4 + i * 0.25,
+      nextAt: 0.4 + i * 0.2,
       slowUntil: 0,
       slowMul: 1,
       lordBoosted: false,
-      isLord: src.kind === "10"
+      isLord: src.kind === "10" || !!src.boss
     };
   });
   var hero = {

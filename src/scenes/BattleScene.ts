@@ -28,7 +28,7 @@ export class BattleScene extends Phaser.Scene {
   private selRing!: Phaser.GameObjects.Rectangle;
   private heroBarBg!: Phaser.GameObjects.Rectangle;
   private heroBarFill!: Phaser.GameObjects.Rectangle;
-  private mobBars = new Map<number, { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle }>();
+  private mobBars = new Map<number, { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle; tag?: Phaser.GameObjects.Text }>();
   private redGlow!: Phaser.GameObjects.Rectangle;
   private sel: { r: number; c: number } | null = null;
   private busy = false;
@@ -42,7 +42,7 @@ export class BattleScene extends Phaser.Scene {
   private slashBtn!: Phaser.GameObjects.Container;
   private ultBtn!: Phaser.GameObjects.Container;
   private logs: string[] = [];
-  private resultRoot?: Phaser.GameObjects.Container;
+  private bannerRoot?: Phaser.GameObjects.Container;
   private autoTimer?: Phaser.Time.TimerEvent;
   private autoLeft = 0;
   private autoStopped = false;
@@ -81,7 +81,11 @@ export class BattleScene extends Phaser.Scene {
 
     for (const m of this.battle.monsters) {
       m.x = 11 + m.enter * 0.35;
-      const spr = this.add.sprite(0, 0, `e${m.kind}-idle-0`).setDisplaySize(48, 54).setInteractive({ useHandCursor: true });
+      const big = !!m.elite || !!m.isLord;
+      const spr = this.add.sprite(0, 0, `e${m.kind}-idle-0`)
+        .setDisplaySize(big ? 58 : 48, big ? 66 : 54)
+        .setInteractive({ useHandCursor: true });
+      if (m.elite) spr.setTint(0xffe0a0);
       spr.play(`e${m.kind}-idle`);
       spr.on("pointerdown", () => {
         if (this.over || m.hp <= 0) return;
@@ -91,7 +95,10 @@ export class BattleScene extends Phaser.Scene {
       this.mobSpr.set(m.id, spr);
       const bg = this.add.rectangle(0, 0, 44, 5, 0x4a1010).setOrigin(0.5, 1);
       const fill = this.add.rectangle(0, 0, 44, 5, 0xe25555).setOrigin(0, 1);
-      this.mobBars.set(m.id, { bg, fill });
+      const tag = m.elite
+        ? this.add.text(0, 0, "精英", { fontSize: "10px", color: "#ffd36a" }).setOrigin(0, 1)
+        : undefined;
+      this.mobBars.set(m.id, { bg, fill, tag });
       this.time.delayedCall(180 * m.enter, () => {
         m.x = m.homeX;
         m.y = m.homeY;
@@ -203,9 +210,12 @@ export class BattleScene extends Phaser.Scene {
         bar?.fill.setVisible(false);
       } else if (bar) {
         const ratio = Math.max(0, m.hp / m.max);
-        bar.bg.setVisible(true).setPosition(mx, my - 30);
-        bar.fill.setVisible(true).setPosition(mx - 22, my - 30).setDisplaySize(44 * ratio, 5);
+        const barY = my - (m.elite || m.isLord ? 36 : 30);
+        bar.bg.setVisible(true).setPosition(mx, barY);
+        bar.fill.setVisible(true).setPosition(mx - 22, barY).setDisplaySize(44 * ratio, 5);
+        if (bar.tag) bar.tag.setVisible(true).setPosition(mx + 24, barY);
       }
+      if (bar?.tag && m.hp <= 0) bar.tag.setVisible(false);
     }
   }
 
@@ -521,7 +531,6 @@ export class BattleScene extends Phaser.Scene {
   private finish(win: boolean) {
     if (this.over) return;
     this.over = true;
-    this.busy = true;
     this.autoStopped = false;
     this.hideSel();
     this.refreshHud();
@@ -530,14 +539,8 @@ export class BattleScene extends Phaser.Scene {
       save.cleared[this.levelIndex] = true;
       persist(save);
     }
-    const living = this.battle.monsters.filter((m: any) => m.hp > 0).length;
     const isLast = this.levelIndex >= LEVELS.length - 1;
-    const detail = win
-      ? (isLast
-        ? `章节完成。剩余生命 ${Math.max(0, this.battle.hero.hp)}。`
-        : `全部击倒。剩余生命 ${Math.max(0, this.battle.hero.hp)}。`)
-      : `你倒下了。还剩 ${living} 只。装备还在。`;
-    this.showResultOverlay(win, detail, isLast);
+    this.showAdvanceBanner(win, isLast);
   }
 
   private clearAuto() {
@@ -547,30 +550,37 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private showResultOverlay(win: boolean, detail: string, isLast: boolean) {
+  private showAdvanceBanner(win: boolean, isLast: boolean) {
     this.clearAuto();
-    this.resultRoot?.destroy(true);
+    this.bannerRoot?.destroy(true);
 
-    const root = this.add.container(0, 0).setDepth(2000);
-    this.resultRoot = root;
-    const bg = this.add.rectangle(W / 2, 360, BOARD_W + 24, 200, 0x120c08, 0.92)
-      .setStrokeStyle(2, win ? 0xc9a227 : 0x8a4040);
-    const title = this.add.text(W / 2, 300, win ? (isLast ? "章节完成" : "胜利") : "失败", {
-      fontSize: "28px", color: win ? "#c9a227" : "#e08080",
+    const root = this.add.container(0, 0).setDepth(1500);
+    this.bannerRoot = root;
+
+    const main = win
+      ? (isLast ? "章节完成" : "进入下一关")
+      : "重新挑战";
+    const banner = this.add.text(W / 2, STAGE_TOP + 48, main, {
+      fontSize: "22px",
+      color: win ? "#ffe08a" : "#ffb0b0",
+      fontStyle: "bold",
+      stroke: "#1a120c",
+      strokeThickness: 4,
+    }).setOrigin(0.5).setAlpha(0);
+    root.add(banner);
+    this.tweens.add({ targets: banner, alpha: 1, duration: 400 });
+
+    const cd = this.add.text(W / 2, STAGE_TOP + 78, "", {
+      fontSize: "13px", color: "#cbb892", stroke: "#1a120c", strokeThickness: 3,
     }).setOrigin(0.5);
-    const body = this.add.text(W / 2, 340, detail, {
-      fontSize: "13px", color: "#cbb892", align: "center", wordWrap: { width: BOARD_W - 16 },
-    }).setOrigin(0.5, 0);
-    const cd = this.add.text(W / 2, 390, "", { fontSize: "14px", color: "#a89070" }).setOrigin(0.5);
-    root.add([bg, title, body, cd]);
+    root.add(cd);
 
-    const addBtn = (x: number, y: number, label: string, fn: () => void) => {
-      const r = this.add.rectangle(x, y, 110, 36, 0x5a3b28).setStrokeStyle(2, 0xc9a227)
+    const mkMini = (x: number, label: string, fn: () => void) => {
+      const r = this.add.rectangle(x, 22, 72, 24, 0x2a1c14, 0.85).setStrokeStyle(1, 0x8a6240)
         .setInteractive({ useHandCursor: true });
-      const tx = this.add.text(x, y, label, { fontSize: "14px", color: "#f3e6c0" }).setOrigin(0.5);
+      const tx = this.add.text(x, 22, label, { fontSize: "12px", color: "#e6d3b0" }).setOrigin(0.5);
       r.on("pointerdown", fn);
       root.add([r, tx]);
-      return r;
     };
 
     const goSelect = () => {
@@ -579,24 +589,21 @@ export class BattleScene extends Phaser.Scene {
     };
 
     if (win && isLast) {
-      cd.setText("本章已通关");
-      addBtn(W / 2, 440, "回选关", goSelect);
+      cd.setText("可回选关");
+      mkMini(W - 48, "回选关", goSelect);
       return;
     }
 
     this.autoLeft = 5;
-    const actionLabel = win ? "下一关" : "重试";
     const doAuto = () => {
       this.clearAuto();
       if (win) this.scene.restart({ levelIndex: this.levelIndex + 1 });
       else this.scene.restart({ levelIndex: this.levelIndex });
     };
     const refreshCd = () => {
-      if (this.autoStopped) {
-        cd.setText("已停止自动");
-      } else {
-        cd.setText(`${this.autoLeft} 秒后自动${actionLabel}`);
-      }
+      cd.setText(this.autoStopped
+        ? "已停止自动"
+        : `${this.autoLeft} 秒后自动${win ? "进入下一关" : "重试"}`);
     };
     refreshCd();
     this.autoTimer = this.time.addEvent({
@@ -610,16 +617,14 @@ export class BattleScene extends Phaser.Scene {
       },
     });
 
-    addBtn(W / 2 - 120, 440, "停止", () => {
+    mkMini(W - 120, "停止", () => {
       if (this.autoStopped) return;
       this.autoStopped = true;
       this.clearAuto();
       refreshCd();
-      addBtn(W / 2 - 60, 480, actionLabel, doAuto);
-      addBtn(W / 2 + 60, 480, "回选关", goSelect);
+      mkMini(W - 120, win ? "下一关" : "重试", doAuto);
     });
-    addBtn(W / 2 + 120, 440, "回选关", goSelect);
+    mkMini(W - 48, "回选关", goSelect);
   }
 
 }
-

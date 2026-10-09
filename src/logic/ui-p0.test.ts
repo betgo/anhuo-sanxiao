@@ -43,7 +43,7 @@ describe("UI P0 — overhead HP bars", () => {
     expect(battleSrc).toMatch(/mobBars\.set\(m\.id/);
     expect(battleSrc).toMatch(/heroBarBg\.setPosition\(hx,\s*hy\s*-\s*30\)\.setVisible\(h\.hp\s*>\s*0\)/);
     expect(battleSrc).toMatch(/if \(m\.hp\s*<=\s*0\)[\s\S]*?bar\?\.bg\.setVisible\(false\)[\s\S]*?bar\?\.fill\.setVisible\(false\)/);
-    expect(battleSrc).toMatch(/bar\.bg\.setVisible\(true\)\.setPosition\(mx,\s*my\s*-\s*30\)/);
+    expect(battleSrc).toMatch(/bar\.bg\.setVisible\(true\)\.setPosition\(mx,\s*barY\)/);
   });
 });
 

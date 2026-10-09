@@ -13,93 +13,82 @@ function method(name: string): string {
   return m![0];
 }
 
-describe("settlement — stay on battle overlay", () => {
-  it("finish shows overlay; never starts ResultScene", () => {
+describe("settlement — non-blocking banner", () => {
+  it("finish shows advance banner; never ResultScene or full-screen modal rect", () => {
     const finish = method("finish");
-    expect(finish).toMatch(/this\.showResultOverlay\(win,\s*detail,\s*isLast\)/);
+    expect(finish).toMatch(/this\.showAdvanceBanner\(win,\s*isLast\)/);
     expect(battleSrc).not.toMatch(/this\.scene\.start\(\s*["']result["']/);
-    expect(finish).not.toMatch(/scene\.start/);
+    expect(finish).not.toMatch(/busy\s*=\s*true/);
   });
 
-  it("showResultOverlay is a depth-2000 container on battle, not a scene switch", () => {
-    const overlay = method("showResultOverlay");
-    expect(overlay).toMatch(/setDepth\(2000\)/);
-    expect(overlay).toMatch(/this\.add\.container/);
-    expect(overlay).not.toMatch(/scene\.start\(\s*["']result["']/);
-    expect(overlay).not.toMatch(/scene\.start\(\s*["']prep["']/);
+  it("banner fades text, keeps top mini buttons, no pause overlay panel", () => {
+    const banner = method("showAdvanceBanner");
+    expect(banner).toMatch(/进入下一关/);
+    expect(banner).toMatch(/重新挑战/);
+    expect(banner).toMatch(/章节完成/);
+    expect(banner).toMatch(/tweens\.add\([\s\S]*alpha:\s*1/);
+    expect(banner).not.toMatch(/0x120c08,\s*0\.92/);
+    expect(banner).toMatch(/"停止"/);
+    expect(banner).toMatch(/"回选关"/);
   });
 });
 
-describe("settlement — win auto next / stop / last level", () => {
-  it("non-last win: 5s countdown, auto restart levelIndex+1, 停止 + 回选关", () => {
-    const overlay = method("showResultOverlay");
-    expect(overlay).toMatch(/this\.autoLeft\s*=\s*5/);
-    expect(overlay).toMatch(/actionLabel\s*=\s*win\s*\?\s*"下一关"\s*:\s*"重试"/);
-    expect(overlay).toMatch(/if \(win\) this\.scene\.restart\(\{\s*levelIndex:\s*this\.levelIndex\s*\+\s*1\s*\}\)/);
-    expect(overlay).toMatch(/delay:\s*1000/);
-    expect(overlay).toMatch(/repeat:\s*4/);
-    expect(overlay).toMatch(/"停止"/);
-    expect(overlay).toMatch(/autoStopped\s*=\s*true/);
-    expect(overlay).toMatch(/addBtn\([\s\S]*actionLabel,\s*doAuto\)/);
-    expect(overlay).toMatch(/"回选关"/);
+describe("settlement — 5s auto / stop", () => {
+  it("non-last: 5s countdown auto restart next or retry", () => {
+    const banner = method("showAdvanceBanner");
+    expect(banner).toMatch(/this\.autoLeft\s*=\s*5/);
+    expect(banner).toMatch(/if \(win\) this\.scene\.restart\(\{\s*levelIndex:\s*this\.levelIndex\s*\+\s*1\s*\}\)/);
+    expect(banner).toMatch(/else this\.scene\.restart\(\{\s*levelIndex:\s*this\.levelIndex\s*\}\)/);
+    expect(banner).toMatch(/delay:\s*1000/);
+    expect(banner).toMatch(/repeat:\s*4/);
+    expect(banner).toMatch(/autoStopped\s*=\s*true/);
   });
 
-  it("last-level win: 章节完成, only 回选关, no auto timer", () => {
-    const finish = method("finish");
-    expect(finish).toMatch(/isLast\s*=\s*this\.levelIndex\s*>=\s*LEVELS\.length\s*-\s*1/);
-    expect(finish).toMatch(/章节完成/);
-    const overlay = method("showResultOverlay");
-    expect(overlay).toMatch(/if \(win && isLast\)/);
-    expect(overlay).toMatch(/win\s*\?\s*\(isLast\s*\?\s*"章节完成"\s*:\s*"胜利"\)/);
-    // early return before autoLeft = 5
-    const lastBlock = overlay.match(/if \(win && isLast\) \{[\s\S]*?return;\s*\}/)?.[0] ?? "";
-    expect(lastBlock).toMatch(/"回选关"/);
+  it("last-level win: 章节完成, only 回选关", () => {
+    const banner = method("showAdvanceBanner");
+    expect(banner).toMatch(/if \(win && isLast\)/);
+    const lastBlock = banner.match(/if \(win && isLast\) \{[\s\S]*?return;\s*\}/)?.[0] ?? "";
+    expect(lastBlock).toMatch(/回选关/);
     expect(lastBlock).not.toMatch(/autoLeft|doAuto|下一关/);
   });
 });
 
-describe("settlement — lose auto retry / stop", () => {
-  it("lose: 5s auto restart same levelIndex as 重试", () => {
-    const overlay = method("showResultOverlay");
-    expect(overlay).toMatch(/else this\.scene\.restart\(\{\s*levelIndex:\s*this\.levelIndex\s*\}\)/);
-    expect(overlay).toMatch(/win\s*\?\s*"下一关"\s*:\s*"重试"/);
-    expect(overlay).toMatch(/秒后自动\$\{actionLabel\}/);
-  });
-});
-
-describe("settlement — restart keeps class/amulet, resets resources", () => {
-  it("create rebuilds from save + makeBattleState + generateBoard; auto path is scene.restart only", () => {
+describe("settlement — restart keeps class/amulet", () => {
+  it("create rebuilds from save + makeBattleState; auto is scene.restart", () => {
     const create = battleSrc.match(/create\(\)\s*\{[\s\S]*?\n  \}/)?.[0] ?? "";
     expect(create).toMatch(/makeBattleState\(lv,\s*save\.classId,\s*save\.amulet\)/);
     expect(create).toMatch(/this\.board\s*=\s*generateBoard\(\)/);
-    expect(create).not.toMatch(/scene\.start\(\s*["']prep["']/);
-    expect(create).not.toMatch(/scene\.start\(\s*["']select["']/);
-
-    const overlay = method("showResultOverlay");
-    const doAuto = overlay.match(/const doAuto\s*=\s*\(\)\s*=>\s*\{[\s\S]*?\};/)?.[0] ?? "";
-    expect(doAuto).toMatch(/scene\.restart/);
-    expect(doAuto).not.toMatch(/prep|select|result/);
+    const banner = method("showAdvanceBanner");
+    expect(banner).toMatch(/scene\.restart/);
+    expect(banner).not.toMatch(/scene\.start\(\s*["']prep["']/);
+    expect(banner).not.toMatch(/scene\.start\(\s*["']result["']/);
   });
 
-  it("makeBattleState: full startHp, shield/blue/yellow 0, class+amulet kept, fresh monsters", () => {
-    const lv0 = LEVELS[0];
-    const st = makeBattleState(lv0, "surv", true);
+  it("makeBattleState resets resources", () => {
+    const st = makeBattleState(LEVELS[0], "surv", true);
     expect(st.classId).toBe("surv");
     expect(st.amulet).toBe(true);
-    expect(st.hero.hp).toBe(lv0.startHp);
+    expect(st.hero.hp).toBe(LEVELS[0].startHp);
     expect(st.hero.max).toBe(HERO_MAX);
     expect(st.shield).toBe(0);
     expect(st.blue).toBe(0);
     expect(st.yellow).toBe(0);
-    expect(st.monsters.length).toBe(lv0.squad.length);
-    expect(st.monsters.every((m: { hp: number; max: number }) => m.hp === m.max && m.hp > 0)).toBe(true);
+    expect(st.monsters.length).toBe(LEVELS[0].squad.length);
+  });
+});
 
-    const lv2 = LEVELS[2]; // 带着伤
-    const wounded = makeBattleState(lv2, "out", false);
-    expect(wounded.hero.hp).toBe(16);
-    expect(wounded.amulet).toBe(false);
-    expect(wounded.shield).toBe(0);
-    expect(wounded.blue).toBe(0);
-    expect(wounded.yellow).toBe(0);
+describe("settlement — no scene pause / elite render hooks", () => {
+  it("finish/banner never call scene.pause or physics pause", () => {
+    expect(battleSrc).not.toMatch(/scene\.pause\(/);
+    expect(battleSrc).not.toMatch(/physics\.pause/);
+    const finish = method("finish");
+    expect(finish).not.toMatch(/this\.busy\s*=\s*true/);
+  });
+
+  it("elite sprites larger + tint + 精英 tag beside bar", () => {
+    expect(battleSrc).toMatch(/const big\s*=\s*!!m\.elite\s*\|\|\s*!!m\.isLord/);
+    expect(battleSrc).toMatch(/setDisplaySize\(big\s*\?\s*58\s*:\s*48,\s*big\s*\?\s*66\s*:\s*54\)/);
+    expect(battleSrc).toMatch(/if \(m\.elite\) spr\.setTint\(0xffe0a0\)/);
+    expect(battleSrc).toMatch(/"精英"/);
   });
 });

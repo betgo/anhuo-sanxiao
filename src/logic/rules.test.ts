@@ -105,20 +105,29 @@ describe("ten levels — count, hp, melee/ranged", () => {
   };
 
   it("levels 1–10 squads", () => {
-    expectSquad(0, 2, 24, [false, false]);
-    expectSquad(1, 2, 30, [false, false]);
-    expectSquad(2, 2, 24, [false, false]);
-    expectSquad(3, 2, 35, [true, true]);
-    expectSquad(4, 2, 33, [false, false]);
-    expectSquad(5, 3, 28, [false, false, false]);
-    expectSquad(6, 2, 50, [false, false]);
-    expectSquad(7, 2, 60, [true, true]);
-    expectSquad(8, 2, 50, [false, false]);
-    expectSquad(9, 3, [24, 24, 120], [false, false, true]);
+    expectSquad(0, 3, 24, [false, false, false]);
+    expectSquad(1, 3, 30, [false, false, false]);
+    expectSquad(2, 4, 24, [false, false, false, false]);
+    expectSquad(3, 4, [35, 35, 35, 63], [true, true, true, true]);
+    expectSquad(4, 5, [33, 33, 33, 33, 59], [false, false, false, false, false]);
+    expectSquad(5, 6, [28, 28, 28, 28, 28, 50], [false, false, false, false, false, false]);
+    expectSquad(6, 5, [50, 50, 50, 50, 90], [false, false, false, false, false]);
+    expectSquad(7, 5, [60, 60, 60, 108, 108], [true, true, true, true, true]);
+    expectSquad(8, 6, [50, 50, 50, 50, 90, 90], [false, false, false, false, false, false]);
+    expectSquad(9, 6, [24, 24, 24, 24, 43, 120], [false, false, false, false, false, true]);
+  });
+
+  it("elites marked and scaled", () => {
+    const e = LEVELS[3].squad[3];
+    expect(e.elite).toBe(true);
+    expect(e.hp).toBe(63);
+    expect(e.str).toBe(9);
+    expect(LEVELS[9].squad[4].elite).toBe(true);
+    expect(LEVELS[9].squad[5].kind).toBe("10");
   });
 
   it("level 10 lord stats before enrage", () => {
-    const lord = LEVELS[9].squad[2];
+    const lord = LEVELS[9].squad[5];
     expect(lord.name).toBe("地牢领主");
     expect(lord.str).toBe(14);
     expect(lord.int).toBe(8);
@@ -411,6 +420,83 @@ describe("monster vs hero attack formulas (product P0)", () => {
       for (const m of st.monsters) {
         expect(unitAttack(m, 0, false)).toBe(mobAtk(m.str));
       }
+    }
+  });
+});
+
+describe("chapter-1 squad counts + elite scaling (product)", () => {
+  const BASE = [
+    { name: "游荡骨兵", hp: 24, str: 6, kind: "01" },
+    { name: "蓝焰鬼火", hp: 30, str: 5, kind: "02" },
+    { name: "腐疫鼠", hp: 24, str: 5, kind: "03" },
+    { name: "试炼石像", hp: 35, str: 7, kind: "04" },
+    { name: "持盾骷髅", hp: 33, str: 8, kind: "05" },
+    { name: "疾行鬼", hp: 28, str: 6, kind: "06" },
+    { name: "锈蚀守卫", hp: 50, str: 10, kind: "07" },
+    { name: "咒印魔像", hp: 60, str: 8, kind: "08" },
+    { name: "重斧魔", hp: 50, str: 12, kind: "09" },
+  ];
+
+  const PLAN: { normals: number; elites: number; lord?: boolean; baseIdx: number }[] = [
+    { normals: 3, elites: 0, baseIdx: 0 },
+    { normals: 3, elites: 0, baseIdx: 1 },
+    { normals: 4, elites: 0, baseIdx: 2 },
+    { normals: 3, elites: 1, baseIdx: 3 },
+    { normals: 4, elites: 1, baseIdx: 4 },
+    { normals: 5, elites: 1, baseIdx: 5 },
+    { normals: 4, elites: 1, baseIdx: 6 },
+    { normals: 3, elites: 2, baseIdx: 7 },
+    { normals: 4, elites: 2, baseIdx: 8 },
+    { normals: 4, elites: 1, lord: true, baseIdx: 0 }, // 普骨4+精骨1+领主
+  ];
+
+  it("each level normal/elite/lord counts match product table", () => {
+    PLAN.forEach((p, i) => {
+      const squad = LEVELS[i].squad as any[];
+      const normals = squad.filter((m) => !m.elite && m.kind !== "10");
+      const elites = squad.filter((m) => m.elite);
+      const lords = squad.filter((m) => m.kind === "10" || m.boss);
+      expect(normals.length, `lv${i + 1} normals`).toBe(p.normals);
+      expect(elites.length, `lv${i + 1} elites`).toBe(p.elites);
+      expect(lords.length, `lv${i + 1} lords`).toBe(p.lord ? 1 : 0);
+      expect(squad.length).toBe(p.normals + p.elites + (p.lord ? 1 : 0));
+    });
+  });
+
+  it("normal single hp/str stay on base table; elite = round(hp*1.8), round(str*1.3)", () => {
+    PLAN.forEach((p, i) => {
+      const base = BASE[p.baseIdx];
+      const squad = LEVELS[i].squad as any[];
+      for (const m of squad) {
+        if (m.kind === "10") {
+          expect(m.hp).toBe(120);
+          expect(m.str).toBe(14);
+          expect(m.elite).toBeFalsy();
+          expect(m.boss).toBe(true);
+          continue;
+        }
+        expect(m.name).toBe(base.name);
+        expect(m.kind).toBe(base.kind);
+        if (m.elite) {
+          expect(m.hp).toBe(Math.round(base.hp * 1.8));
+          expect(m.str).toBe(Math.round(base.str * 1.3));
+        } else {
+          expect(m.hp).toBe(base.hp);
+          expect(m.str).toBe(base.str);
+        }
+      }
+    });
+  });
+
+  it("makeBattleState copies elite flag; lord isLord for enrage", () => {
+    for (let i = 0; i < LEVELS.length; i++) {
+      const st = makeBattleState(LEVELS[i], "out", false);
+      LEVELS[i].squad.forEach((src: any, j: number) => {
+        expect(st.monsters[j].elite).toBe(!!src.elite);
+        expect(st.monsters[j].isLord).toBe(src.kind === "10" || !!src.boss);
+        expect(st.monsters[j].hp).toBe(src.hp);
+        expect(st.monsters[j].str).toBe(src.str);
+      });
     }
   });
 });
