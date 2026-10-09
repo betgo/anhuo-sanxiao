@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>暗火三消</title>
+<link rel="stylesheet" href="game.css">
+</head>
+<body>
+<div class="wrap">
+  <section id="screen-title" class="screen stack">
+    <img id="title-mark" class="mark" src="../anhuo-art/enemy-10.png" alt="">
+    <h1>暗火三消</h1>
+    <p class="muted">像素暗黑 · 三消闯关<br>一个英雄，三种职业</p>
+    <div class="legend title-beads">
+      <span><img src="../anhuo-art/bead-r.png" alt="">红·加攻</span>
+      <span><img src="../anhuo-art/bead-b.png" alt="">蓝·技能</span>
+      <span><img src="../anhuo-art/bead-g.png" alt="">绿·治疗</span>
+      <span><img src="../anhuo-art/bead-y.png" alt="">黄·职业</span>
+    </div>
+    <button id="btn-start" type="button">进入地牢</button>
+    <p id="title-progress" class="muted">第一章进度 0 / 10</p>
+  </section>
+
+  <section id="screen-select" class="screen hidden">
+    <div class="spread">
+      <h2>第一章 · 地牢初燃</h2>
+      <span id="clear-count" class="muted">已通关 0 / 10</span>
+    </div>
+    <p class="muted">通关后解锁下一关。可打开「全部解锁」跳关试玩。</p>
+    <div id="level-list"></div>
+    <label class="toggle"><input id="unlock-all" type="checkbox"> 全部解锁</label>
+  </section>
+
+  <section id="screen-prep" class="screen hidden stack">
+    <div class="spread prep-head">
+      <div>
+        <div id="prep-kicker" class="muted">第 1 关</div>
+        <h2 id="prep-title">游荡骨兵</h2>
+        <div id="prep-meta" class="muted"></div>
+      </div>
+      <img id="prep-enemy" class="portrait" alt="" src="../anhuo-art/enemy-01.png">
+    </div>
+    <p id="prep-teach"></p>
+    <div>
+      <div class="muted">选择职业（战斗中不能换）</div>
+      <div class="classes">
+        <button type="button" class="class-btn on" data-class="out"><img src="../anhuo-art/hero-out.png" alt=""><b>输出</b><small>力量偏向</small></button>
+        <button type="button" class="class-btn" data-class="surv"><img src="../anhuo-art/hero-surv.png" alt=""><b>生存</b><small>力敏偏向</small></button>
+        <button type="button" class="class-btn" data-class="ctrl"><img src="../anhuo-art/hero-ctrl.png" alt=""><b>控制</b><small>智力偏向</small></button>
+      </div>
+      <p id="prep-class" class="muted"></p>
+    </div>
+    <div class="gear">
+      <img class="icon" src="../anhuo-art/icon-sword.png" alt="">
+      <div class="grow">
+        <b>锈剑</b>
+        <div id="prep-sword" class="muted"></div>
+      </div>
+      <em>已装备</em>
+    </div>
+    <label class="gear">
+      <img class="icon" src="../anhuo-art/icon-amulet.png" alt="">
+      <div class="grow">
+        <b>护符</b>
+        <div class="muted">勾上后绿珠每颗 3 点，不勾是 2 点</div>
+      </div>
+      <input id="amulet" type="checkbox">
+    </label>
+    <p id="prep-rules" class="muted"></p>
+    <button id="btn-fight" type="button">开始战斗</button>
+    <button id="btn-prep-back" type="button">返回选关</button>
+  </section>
+
+  <section id="screen-battle" class="screen hidden">
+    <div class="spread">
+      <span id="battle-kicker" class="muted">第 1 / 10 关</span>
+      <span id="turn-label" class="hidden"></span>
+    </div>
+    <p id="teach"></p>
+    <div id="stage">
+      <div id="hero-actor" class="actor hero"><img alt="" src="../anhuo-art/hero-out.png"></div>
+      <div id="monsters"></div>
+      <div class="ground"></div>
+    </div>
+    <div class="who" id="hero-card">
+      <img id="hero-portrait" class="portrait" alt="" src="../anhuo-art/hero-out.png">
+      <div class="grow">
+        <div class="spread">
+          <b id="hero-class">英雄 · 输出</b>
+          <span id="hero-hp">34 / 34</span>
+        </div>
+        <div class="bar hp"><span id="hero-bar"></span></div>
+        <div class="spread slim">
+          <span id="shield-text" class="muted">护盾 0 / 22</span>
+        </div>
+        <div class="bar shield"><span id="shield-bar"></span></div>
+      </div>
+    </div>
+    <div class="res" id="res-row">
+      <span id="res-blue">蓝 0</span>
+      <span id="res-yellow">黄 0</span>
+      <span id="res-shield">护盾 0</span>
+      <span id="res-stun">增效 —</span>
+    </div>
+    <div id="gear-hud" class="muted">锈剑（未生效）</div>
+    <div id="board"></div>
+    <div class="legend">
+      <span><img src="../anhuo-art/bead-r.png" alt="">红·加攻</span>
+      <span><img src="../anhuo-art/bead-b.png" alt="">蓝·技能</span>
+      <span><img src="../anhuo-art/bead-g.png" alt="">绿·治疗</span>
+      <span><img src="../anhuo-art/bead-y.png" alt="">黄·职业</span>
+    </div>
+    <p id="last-line" class="muted">三消只增效。点怪改锁定。进距离就打，打完不退回。</p>
+    <div id="log"></div>
+    <div class="skills">
+      <button id="btn-slash" type="button" disabled>
+        <b>裂击</b>
+        <small id="slash-note">蓝×4 · 伤害 22</small>
+      </button>
+      <button id="btn-ult" type="button" disabled>
+        <b>职业技</b>
+        <small id="ult-note">蓝×4 黄×2</small>
+        <small id="ult-desc"></small>
+      </button>
+    </div>
+    <p id="skill-hint" class="muted"></p>
+  </section>
+
+  <section id="screen-result" class="screen hidden stack">
+    <h2 id="result-title">胜利</h2>
+    <p id="result-detail"></p>
+    <button id="btn-next" type="button">下一关</button>
+    <button id="btn-retry" type="button">重试</button>
+    <button id="btn-result-back" type="button">返回选关</button>
+  </section>
+  <div id="fatal"></div>
+</div>
+<div id="toast"></div>
+<script src="logic.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
