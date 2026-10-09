@@ -22,6 +22,9 @@ import {
   mobAtk,
   unitInterval,
   maybeEnrageLord,
+  tryAdvanceWave,
+  matchTier,
+  WAVES,
   applySlow,
   getLock,
   strikeHero,
@@ -97,10 +100,11 @@ describe("ten levels — count, hp, melee/ranged", () => {
       expect(!!m.ranged).toBe(rangedFlags[i]);
     });
     const st = makeBattleState(lv, "out", false);
-    expect(st.monsters).toHaveLength(count);
+    const wave0 = (lv.waves || [lv.squad])[0];
+    expect(st.monsters).toHaveLength(wave0.length);
     st.monsters.forEach((m: any, i: number) => {
-      expect(m.hp).toBe(hps[i]);
-      expect(m.range).toBe(rangedFlags[i] ? 3 : 1);
+      expect(m.hp).toBe(wave0[i].hp);
+      expect(m.range).toBe(wave0[i].ranged ? 3 : 1);
     });
   };
 
@@ -138,17 +142,21 @@ describe("ten levels — count, hp, melee/ranged", () => {
 });
 
 describe("maybeEnrageLord", () => {
-  it("str +4 once when now >= 16", () => {
+  it("str +4 once when 16s after lord entry", () => {
     const st = makeBattleState(LEVELS[9], "out", false);
+    st.monsters.forEach((m: any) => { m.hp = 0; });
+    expect(tryAdvanceWave(st, 1).advanced).toBe(true); // elite wave
+    st.monsters.forEach((m: any) => { m.hp = 0; });
+    const adv = tryAdvanceWave(st, 5);
+    expect(adv.advanced).toBe(true);
     const lord = st.monsters.find((m: any) => m.isLord)!;
-    expect(maybeEnrageLord(st, 15.9)).toBe(false);
+    expect(st.lordEnteredAt).toBe(5);
+    expect(maybeEnrageLord(st, 20.9)).toBe(false);
     expect(lord.str).toBe(14);
-    expect(maybeEnrageLord(st, 16)).toBe(true);
+    expect(maybeEnrageLord(st, 21)).toBe(true);
     expect(lord.str).toBe(18);
-    expect(baseAtk(lord.str, false)).toBe(22);
     expect(st.lordEnraged).toBe(true);
-    expect(maybeEnrageLord(st, 20)).toBe(false);
-    expect(lord.str).toBe(18);
+    expect(maybeEnrageLord(st, 30)).toBe(false);
   });
 });
 
@@ -167,15 +175,15 @@ describe("match-3 buffs only", () => {
     expect(unitAttack(st2.hero, 0.1, false)).toBe(Math.round(16 * 1.7));
   });
 
-  it("blue +1 per bead and temp int +4", () => {
+  it("blue +1 per bead and temp int +4 (triple)", () => {
     const st = makeBattleState(LEVELS[1], "out", false);
     const ctx = makeCtxFrom(LEVELS[1], "out", false);
-    resolveGroup(group("b", 4, 4), st, ctx, 0);
-    expect(st.blue).toBe(4);
+    resolveGroup(group("b", 3, 3), st, ctx, 0);
+    expect(st.blue).toBe(3);
     expect(st.hero.tempInt).toBe(4);
     expect(st.hero.tempIntUntil).toBe(4);
     resolveGroup(group("b", 3, 3), st, ctx, 1);
-    expect(st.blue).toBe(7);
+    expect(st.blue).toBe(6);
     expect(st.hero.tempInt).toBe(4);
     expect(st.hero.tempIntUntil).toBe(5);
   });
@@ -198,9 +206,9 @@ describe("match-3 buffs only", () => {
     const full = makeBattleState(LEVELS[0], "out", false);
     const ctxF = makeCtxFrom(LEVELS[3], "out", false);
     full.hero.hp = 34;
-    resolveGroup(group("g", 5, 5), full, ctxF, 0);
+    resolveGroup(group("g", 3, 3), full, ctxF, 0);
     expect(full.hero.hp).toBe(34);
-    expect(full.shield).toBe(10); // 5*2
+    expect(full.shield).toBe(6); // 3*2
   });
 
   it("ctrl yellow slows lock interval x1.5", () => {
@@ -221,6 +229,167 @@ describe("match-3 buffs only", () => {
     resolveGroup(group("y", 3, 3), st, ctx, 0);
     expect(st.yellow).toBe(3);
     expect(st.shield).toBe(12);
+  });
+});
+
+describe("match tiers", () => {
+  it("matchTier buckets", () => {
+    expect(matchTier(3)).toBe(3);
+    expect(matchTier(4)).toBe(4);
+    expect(matchTier(5)).toBe(5);
+    expect(matchTier(7)).toBe(5);
+  });
+  it("red/yellow out scale by tier", () => {
+    const st = makeBattleState(LEVELS[6], "out", false);
+    const ctx = makeCtxFrom(LEVELS[6], "out", false);
+    expect(resolveGroup(group("r", 4, 4), st, ctx, 0).tier).toBe(4);
+    expect(st.hero.redBonus).toBeCloseTo(0.6);
+    expect(st.hero.redUntil).toBe(4);
+    resolveGroup(group("r", 5, 5), st, ctx, 0);
+    expect(st.hero.redBonus).toBeCloseTo(0.8);
+    expect(st.hero.redUntil).toBe(5);
+    resolveGroup(group("y", 4, 4), st, ctx, 0);
+    expect(st.hero.yellowAtkBonus).toBeCloseTo(0.45);
+    resolveGroup(group("y", 5, 5), st, ctx, 0);
+    expect(st.hero.yellowAtkBonus).toBeCloseTo(0.6);
+    expect(unitAttack(st.hero, 0.1, true)).toBe(Math.round(18 * 2.4));
+  });
+  it("blue/green/surv/ctrl scale by tier", () => {
+    const stB = makeBattleState(LEVELS[1], "out", false);
+    resolveGroup(group("b", 4, 4), stB, makeCtxFrom(LEVELS[1], "out", false), 0);
+    expect(stB.hero.tempInt).toBe(6);
+    resolveGroup(group("b", 5, 5), stB, makeCtxFrom(LEVELS[1], "out", false), 0);
+    expect(stB.hero.tempInt).toBe(8);
+    expect(stB.hero.tempIntUntil).toBe(5);
+    const stG = makeBattleState(LEVELS[0], "out", false);
+    stG.hero.hp = 34;
+    resolveGroup(group("g", 4, 4), stG, makeCtxFrom(LEVELS[3], "out", false), 0);
+    expect(stG.shield).toBe(12); // 4*3
+    resolveGroup(group("g", 5, 5), stG, makeCtxFrom(LEVELS[3], "out", false), 0);
+    expect(stG.shield).toBe(22); // 12+20 capped
+    const stS = makeBattleState(LEVELS[3], "surv", false);
+    resolveGroup(group("y", 4, 4), stS, makeCtxFrom(LEVELS[3], "surv", false), 0);
+    expect(stS.shield).toBe(22); // capped, 6*4=24 -> 22
+    const stS5 = makeBattleState(LEVELS[3], "surv", false);
+    resolveGroup(group("y", 5, 5), stS5, makeCtxFrom(LEVELS[3], "surv", false), 0);
+    expect(stS5.shield).toBe(22); // 8*5=40 -> cap 22
+    expect(stS5.yellow).toBe(5);
+    const stC = makeBattleState(LEVELS[3], "ctrl", false);
+    const lock = getLock(stC)!;
+    resolveGroup(group("y", 4, 4), stC, makeCtxFrom(LEVELS[3], "ctrl", false), 0);
+    expect(lock.slowMul).toBe(1.75);
+    expect(lock.slowUntil).toBe(3.5);
+    resolveGroup(group("y", 5, 5), stC, makeCtxFrom(LEVELS[3], "ctrl", false), 0);
+    expect(lock.slowMul).toBe(2);
+    expect(lock.slowUntil).toBe(4); // capped
+  });
+
+  it("四色×三档 table matches req 1.4 (no direct damage)", () => {
+    const cases: { color: "r"|"b"|"g"|"y"; n: number; classId?: "out"|"surv"|"ctrl"; check: (st: any, r: any) => void }[] = [
+      { color: "r", n: 3, check: (st) => { expect(st.hero.redBonus).toBeCloseTo(0.4); expect(st.hero.redUntil).toBe(4); } },
+      { color: "r", n: 4, check: (st) => { expect(st.hero.redBonus).toBeCloseTo(0.6); expect(st.hero.redUntil).toBe(4); } },
+      { color: "r", n: 5, check: (st) => { expect(st.hero.redBonus).toBeCloseTo(0.8); expect(st.hero.redUntil).toBe(5); } },
+      { color: "b", n: 3, check: (st) => { expect(st.blue).toBe(3); expect(st.hero.tempInt).toBe(4); expect(st.hero.tempIntUntil).toBe(4); } },
+      { color: "b", n: 4, check: (st) => { expect(st.blue).toBe(4); expect(st.hero.tempInt).toBe(6); expect(st.hero.tempIntUntil).toBe(4); } },
+      { color: "b", n: 5, check: (st) => { expect(st.blue).toBe(5); expect(st.hero.tempInt).toBe(8); expect(st.hero.tempIntUntil).toBe(5); } },
+      { color: "g", n: 3, check: (st) => { expect(st.shield).toBe(6); } },
+      { color: "g", n: 4, check: (st) => { expect(st.shield).toBe(12); } },
+      { color: "g", n: 5, check: (st) => { expect(st.shield).toBe(20); } },
+      { color: "y", n: 3, classId: "out", check: (st) => { expect(st.hero.yellowAtkBonus).toBeCloseTo(0.3); expect(st.hero.yellowAtkUntil).toBe(4); } },
+      { color: "y", n: 4, classId: "out", check: (st) => { expect(st.hero.yellowAtkBonus).toBeCloseTo(0.45); expect(st.hero.yellowAtkUntil).toBe(4); } },
+      { color: "y", n: 5, classId: "out", check: (st) => { expect(st.hero.yellowAtkBonus).toBeCloseTo(0.6); expect(st.hero.yellowAtkUntil).toBe(5); } },
+      { color: "y", n: 3, classId: "surv", check: (st) => { expect(st.shield).toBe(12); } },
+      { color: "y", n: 4, classId: "surv", check: (st) => { expect(st.shield).toBe(22); } }, // 24 capped
+      { color: "y", n: 5, classId: "surv", check: (st) => { expect(st.shield).toBe(22); } },
+      { color: "y", n: 3, classId: "ctrl", check: (st) => { const lock = getLock(st)!; expect(lock.slowMul).toBe(1.5); expect(lock.slowUntil).toBe(3); } },
+      { color: "y", n: 4, classId: "ctrl", check: (st) => { const lock = getLock(st)!; expect(lock.slowMul).toBe(1.75); expect(lock.slowUntil).toBe(3.5); } },
+      { color: "y", n: 5, classId: "ctrl", check: (st) => { const lock = getLock(st)!; expect(lock.slowMul).toBe(2); expect(lock.slowUntil).toBe(4); } },
+    ];
+    for (const c of cases) {
+      const classId = c.classId || "out";
+      const lv = LEVELS[3];
+      const st = makeBattleState(lv, classId, false);
+      st.hero.hp = 34;
+      const hps = st.monsters.map((m: any) => m.hp);
+      const r = resolveGroup(group(c.color, c.n, c.n), st, makeCtxFrom(lv, classId, false), 0);
+      expect(r.tier).toBe(matchTier(c.n));
+      c.check(st, r);
+      expect(st.monsters.map((m: any) => m.hp)).toEqual(hps);
+    }
+  });
+});
+
+describe("waves", () => {
+  it("1-3 single wave; 4-9 two; 10 three", () => {
+    for (let i = 0; i < 3; i++) expect(WAVES[i]).toHaveLength(1);
+    for (let i = 3; i < 9; i++) expect(WAVES[i]).toHaveLength(2);
+    expect(WAVES[9]).toHaveLength(3);
+  });
+
+  it("wave split table matches req 2.3", () => {
+    const expectWave = (lv: number, wi: number, normals: number, elites: number, lords = 0) => {
+      const wave = WAVES[lv][wi] as any[];
+      expect(wave.filter((m) => !m.elite && m.kind !== "10").length).toBe(normals);
+      expect(wave.filter((m) => m.elite).length).toBe(elites);
+      expect(wave.filter((m) => m.kind === "10" || m.boss).length).toBe(lords);
+    };
+    expectWave(3, 0, 3, 0); expectWave(3, 1, 0, 1);
+    expectWave(4, 0, 4, 0); expectWave(4, 1, 0, 1);
+    expectWave(5, 0, 5, 0); expectWave(5, 1, 0, 1);
+    expectWave(6, 0, 4, 0); expectWave(6, 1, 0, 1);
+    expectWave(7, 0, 3, 0); expectWave(7, 1, 0, 2);
+    expectWave(8, 0, 4, 0); expectWave(8, 1, 0, 2);
+    expectWave(9, 0, 4, 0); expectWave(9, 1, 0, 1); expectWave(9, 2, 0, 0, 1);
+  });
+
+  it("level 4 starts with 3 normals then elite", () => {
+    const st = makeBattleState(LEVELS[3], "out", false);
+    expect(st.monsters).toHaveLength(3);
+    expect(st.monsters.every((m: any) => !m.elite)).toBe(true);
+    st.monsters.forEach((m: any) => { m.hp = 0; });
+    const adv = tryAdvanceWave(st, 2);
+    expect(adv.advanced).toBe(true);
+    expect(st.waveIndex).toBe(1);
+    expect(st.monsters.filter((m: any) => m.hp > 0 && m.elite)).toHaveLength(1);
+  });
+
+  it("level 10 three waves: bone -> elite bone -> lord", () => {
+    const st = makeBattleState(LEVELS[9], "out", false);
+    expect(st.monsters).toHaveLength(4);
+    expect(st.monsters.every((m: any) => !m.elite && !m.isLord)).toBe(true);
+    st.monsters.forEach((m: any) => { m.hp = 0; });
+    expect(tryAdvanceWave(st, 1).advanced).toBe(true);
+    expect(st.monsters.filter((m: any) => m.hp > 0 && m.elite)).toHaveLength(1);
+    st.monsters.forEach((m: any) => { m.hp = 0; });
+    expect(tryAdvanceWave(st, 2).advanced).toBe(true);
+    expect(st.monsters.filter((m: any) => m.hp > 0 && m.isLord)).toHaveLength(1);
+    expect(st.lordEnteredAt).toBe(2);
+  });
+
+  it("wave advance keeps buffs and resources", () => {
+    const st = makeBattleState(LEVELS[3], "out", false);
+    st.blue = 7;
+    st.yellow = 4;
+    st.shield = 5;
+    st.hero.hp = 20;
+    st.hero.redBonus = 0.6;
+    st.hero.redUntil = 99;
+    st.hero.yellowAtkBonus = 0.45;
+    st.hero.yellowAtkUntil = 99;
+    st.monsters.forEach((m: any) => { m.hp = 0; });
+    tryAdvanceWave(st, 3);
+    expect(st.blue).toBe(7);
+    expect(st.yellow).toBe(4);
+    expect(st.shield).toBe(5);
+    expect(st.hero.hp).toBe(20);
+    expect(st.hero.redBonus).toBeCloseTo(0.6);
+    expect(st.hero.yellowAtkBonus).toBeCloseTo(0.45);
+  });
+
+  it("no advance while living mobs remain", () => {
+    const st = makeBattleState(LEVELS[3], "out", false);
+    expect(tryAdvanceWave(st, 1).advanced).toBe(false);
+    expect(st.waveIndex).toBe(0);
   });
 });
 
@@ -488,10 +657,12 @@ describe("chapter-1 squad counts + elite scaling (product)", () => {
     });
   });
 
-  it("makeBattleState copies elite flag; lord isLord for enrage", () => {
+  it("makeBattleState spawns wave 0 with elite/lord flags", () => {
     for (let i = 0; i < LEVELS.length; i++) {
       const st = makeBattleState(LEVELS[i], "out", false);
-      LEVELS[i].squad.forEach((src: any, j: number) => {
+      const wave0 = LEVELS[i].waves[0];
+      expect(st.monsters).toHaveLength(wave0.length);
+      wave0.forEach((src: any, j: number) => {
         expect(st.monsters[j].elite).toBe(!!src.elite);
         expect(st.monsters[j].isLord).toBe(src.kind === "10" || !!src.boss);
         expect(st.monsters[j].hp).toBe(src.hp);

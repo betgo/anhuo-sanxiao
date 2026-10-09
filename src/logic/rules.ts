@@ -69,18 +69,24 @@ var GUARD = mon("07", "锈蚀守卫", 50, 10, 3, 4);
 var GOLEM = mon("08", "咒印魔像", 60, 8, 9, 3, true);
 var AXE = mon("09", "重斧魔", 50, 12, 3, 5);
 var LORD = mon("10", "地牢领主", 120, 14, 8, 5, true);
-let SQUADS = [
-  nOf(BONE, 3),
-  nOf(FLAME, 3),
-  nOf(RAT, 4),
-  nOf(STATUE, 3).concat([eliteOf(STATUE)]),
-  nOf(SKULL, 4).concat([eliteOf(SKULL)]),
-  nOf(RUNNER, 5).concat([eliteOf(RUNNER)]),
-  nOf(GUARD, 4).concat([eliteOf(GUARD)]),
-  nOf(GOLEM, 3).concat([eliteOf(GOLEM), eliteOf(GOLEM)]),
-  nOf(AXE, 4).concat([eliteOf(AXE), eliteOf(AXE)]),
-  nOf(BONE, 4).concat([eliteOf(BONE), LORD])
+let WAVES = [
+  [nOf(BONE, 3)],
+  [nOf(FLAME, 3)],
+  [nOf(RAT, 4)],
+  [nOf(STATUE, 3), [eliteOf(STATUE)]],
+  [nOf(SKULL, 4), [eliteOf(SKULL)]],
+  [nOf(RUNNER, 5), [eliteOf(RUNNER)]],
+  [nOf(GUARD, 4), [eliteOf(GUARD)]],
+  [nOf(GOLEM, 3), [eliteOf(GOLEM), eliteOf(GOLEM)]],
+  [nOf(AXE, 4), [eliteOf(AXE), eliteOf(AXE)]],
+  [nOf(BONE, 4), [eliteOf(BONE)], [LORD]]
 ];
+function flatSquad(waves) {
+  var out = [];
+  for (var w = 0; w < waves.length; w++) out = out.concat(waves[w]);
+  return out;
+}
+let SQUADS = WAVES.map(flatSquad);
 function stackFor(n) {
   var out = [];
   for (var i = 0; i < n; i++) {
@@ -101,9 +107,12 @@ let LEVELS = [
   { name: "锈蚀守卫", blue: true, green: true, yellow: true, sword: true, slash: true, ult: false, startHp: 34, teach: "锈剑生效：攻击力额外 +2。" },
   { name: "咒印魔像", blue: true, green: true, yellow: true, sword: true, slash: true, ult: true, startHp: 34, teach: "职业技解锁。输出伤、生存盾、控制减速，都看智力倍率。" },
   { name: "重斧魔", blue: true, green: true, yellow: true, sword: true, slash: true, ult: true, startHp: 34, teach: "力量高，一下很疼。用护盾和控制拖住。" },
-  { name: "地牢领主", blue: true, green: true, yellow: true, sword: true, slash: true, ult: true, startHp: 34, teach: "领主远程。开场满 16 秒力量再 +4，只加一次。" }
+  { name: "地牢领主", blue: true, green: true, yellow: true, sword: true, slash: true, ult: true, startHp: 34, teach: "领主远程。入场后满 16 秒力量再 +4，只加一次。" }
 ];
-for (var li = 0; li < LEVELS.length; li++) LEVELS[li].squad = SQUADS[li];
+for (var li = 0; li < LEVELS.length; li++) {
+  LEVELS[li].squad = SQUADS[li];
+  LEVELS[li].waves = WAVES[li];
+}
 
 let FALLBACK = [
   ["r", "b", "r", "b", "g", "y", "g"],
@@ -283,10 +292,15 @@ function moveSpeed(agi) {
 function skillMult(intel) {
   return 1 + intel * 0.05;
 }
+function matchTier(n) {
+  if (n >= 5) return 5;
+  if (n >= 4) return 4;
+  return 3;
+}
 function heroAtkMult(hero, now) {
   var bonus = 0;
-  if (hero.redUntil > now) bonus += 0.4;
-  if (hero.yellowAtkUntil > now) bonus += 0.3;
+  if (hero.redUntil > now) bonus += (hero.redBonus || 0);
+  if (hero.yellowAtkUntil > now) bonus += (hero.yellowAtkBonus || 0);
   return 1 + bonus;
 }
 function unitInterval(u, now) {
@@ -303,12 +317,11 @@ function unitAttack(u, now, sword) {
   return Math.round(atk * heroAtkMult(u, now));
 }
 
-function makeBattleState(lv, classId, amulet) {
-  var st = HERO_STATS[classId] || HERO_STATS.out;
-  var stack = stackFor(lv.squad.length);
-  var monsters = lv.squad.map(function (src, i) {
+function spawnFromTemplates(templates, idStart, enterOffset) {
+  var stack = stackFor(templates.length);
+  return templates.map(function (src, i) {
     return {
-      id: i + 1,
+      id: idStart + i,
       side: "mob",
       kind: src.kind,
       name: src.name,
@@ -323,7 +336,7 @@ function makeBattleState(lv, classId, amulet) {
       y: stack[i].y,
       homeX: stack[i].x,
       homeY: stack[i].y,
-      enter: i,
+      enter: enterOffset + i,
       nextAt: 0.4 + i * 0.2,
       slowUntil: 0,
       slowMul: 1,
@@ -331,6 +344,11 @@ function makeBattleState(lv, classId, amulet) {
       isLord: src.kind === "10" || !!src.boss
     };
   });
+}
+function makeBattleState(lv, classId, amulet) {
+  var st = HERO_STATS[classId] || HERO_STATS.out;
+  var waves = lv.waves || [lv.squad];
+  var monsters = spawnFromTemplates(waves[0], 1, 0);
   var hero = {
     id: 0,
     side: "hero",
@@ -346,7 +364,9 @@ function makeBattleState(lv, classId, amulet) {
     y: 0.2,
     nextAt: 0.3,
     redUntil: 0,
+    redBonus: 0,
     yellowAtkUntil: 0,
+    yellowAtkBonus: 0,
     tempInt: 0,
     tempIntUntil: 0,
     slowUntil: 0,
@@ -369,8 +389,32 @@ function makeBattleState(lv, classId, amulet) {
     sword: !!lv.sword,
     slashReadyAt: 0,
     ultReadyAt: 0,
-    lordEnraged: false
+    lordEnraged: false,
+    waves: waves,
+    waveIndex: 0,
+    nextMonsterId: monsters.length + 1,
+    lordEnteredAt: null
   };
+}
+
+function livingMobs(st) {
+  var live = [];
+  for (var i = 0; i < st.monsters.length; i++) if (st.monsters[i].hp > 0) live.push(st.monsters[i]);
+  return live;
+}
+function tryAdvanceWave(st, now) {
+  if (livingMobs(st).length) return { advanced: false, done: false, waveIndex: st.waveIndex };
+  if (st.waveIndex >= st.waves.length - 1) return { advanced: false, done: true, waveIndex: st.waveIndex };
+  st.waveIndex += 1;
+  var spawned = spawnFromTemplates(st.waves[st.waveIndex], st.nextMonsterId, st.nextMonsterId - 1);
+  st.nextMonsterId += spawned.length;
+  for (var i = 0; i < spawned.length; i++) {
+    st.monsters.push(spawned[i]);
+    if (spawned[i].isLord) st.lordEnteredAt = now;
+  }
+  var lock = closest(st);
+  st.lockId = lock ? lock.id : null;
+  return { advanced: true, done: false, waveIndex: st.waveIndex, spawned: spawned };
 }
 
 function closest(st) {
@@ -384,6 +428,7 @@ function closest(st) {
 }
 function allDead(st) {
   for (var i = 0; i < st.monsters.length; i++) if (st.monsters[i].hp > 0) return false;
+  if (st.waves && st.waveIndex < st.waves.length - 1) return false;
   return true;
 }
 function retarget(st) {
@@ -478,7 +523,10 @@ function clearExpired(st, now) {
   }
 }
 function maybeEnrageLord(st, now) {
-  if (st.lordEnraged || now < 16) return false;
+  if (st.lordEnraged) return false;
+  var entered = st.lordEnteredAt;
+  if (entered == null) return false;
+  if (now - entered < 16) return false;
   for (var i = 0; i < st.monsters.length; i++) {
     var m = st.monsters[i];
     if (m.isLord && m.hp > 0 && !m.lordBoosted) {
@@ -507,8 +555,8 @@ function makeCtxFrom(lv, classId, amulet) {
     classId: classId
   };
 }
-function applyGreen(st, n, amulet) {
-  var per = GREEN_BASE + (amulet ? 1 : 0);
+function applyGreen(st, n, amulet, perOverride) {
+  var per = perOverride != null ? perOverride : (GREEN_BASE + (amulet ? 1 : 0));
   var points = per * n;
   var healed = 0;
   var need = Math.max(0, st.hero.max - st.hero.hp);
@@ -522,39 +570,53 @@ function applyGreen(st, n, amulet) {
 }
 function resolveGroup(group, st, ctx, now) {
   var n = group.cells.length;
+  var tier = matchTier(n);
+  var tierLabel = tier >= 5 ? "五连" : (tier === 4 ? "四连" : "三连");
   if (group.color === "r") {
-    st.hero.redUntil = now + 4;
-    return "红珠×" + n + " 攻击 +40% 4秒";
+    var redBonus = tier >= 5 ? 0.8 : (tier === 4 ? 0.6 : 0.4);
+    var redDur = tier >= 5 ? 5 : 4;
+    st.hero.redBonus = redBonus;
+    st.hero.redUntil = now + redDur;
+    return { text: "红珠×" + n + " " + tierLabel + " 攻击 +" + Math.round(redBonus * 100) + "% " + redDur + "秒", tier: tier, color: "r" };
   }
   if (group.color === "b") {
-    if (!ctx.blue) return "蓝珠×" + n + "（本关不结算）";
+    if (!ctx.blue) return { text: "蓝珠×" + n + "（本关不结算）", tier: tier, color: "b" };
+    var tint = tier >= 5 ? 8 : (tier === 4 ? 6 : 4);
+    var bDur = tier >= 5 ? 5 : 4;
     st.blue = Math.min(BLUE_CAP, st.blue + n);
-    st.hero.tempInt = 4;
-    st.hero.tempIntUntil = now + 4;
-    return "蓝珠×" + n + " 蓝+" + n + "，智力临时+4";
+    st.hero.tempInt = tint;
+    st.hero.tempIntUntil = now + bDur;
+    return { text: "蓝珠×" + n + " " + tierLabel + " 蓝+" + n + "，智力临时+" + tint, tier: tier, color: "b" };
   }
   if (group.color === "g") {
-    if (!ctx.green) return "绿珠×" + n + "（本关不结算）";
-    var g = applyGreen(st, n, ctx.amulet);
-    return "绿珠×" + n + " 治疗 " + g.healed + "，护盾 +" + g.shield;
+    if (!ctx.green) return { text: "绿珠×" + n + "（本关不结算）", tier: tier, color: "g" };
+    var gPer = tier >= 5 ? (ctx.amulet ? 5 : 4) : (tier === 4 ? (ctx.amulet ? 4 : 3) : (ctx.amulet ? 3 : 2));
+    var g = applyGreen(st, n, ctx.amulet, gPer);
+    return { text: "绿珠×" + n + " " + tierLabel + " 治疗 " + g.healed + "，护盾 +" + g.shield, tier: tier, color: "g" };
   }
   if (group.color === "y") {
-    if (!ctx.yellow) return "黄珠×" + n + "（本关不结算）";
+    if (!ctx.yellow) return { text: "黄珠×" + n + "（本关不结算）", tier: tier, color: "y" };
     st.yellow = Math.min(YELLOW_CAP, st.yellow + n);
     if (ctx.classId === "out") {
-      st.hero.yellowAtkUntil = now + 4;
-      return "黄珠×" + n + " 黄+" + n + "，攻击再+30%";
+      var yBonus = tier >= 5 ? 0.6 : (tier === 4 ? 0.45 : 0.3);
+      var yDur = tier >= 5 ? 5 : 4;
+      st.hero.yellowAtkBonus = yBonus;
+      st.hero.yellowAtkUntil = now + yDur;
+      return { text: "黄珠×" + n + " " + tierLabel + " 黄+" + n + "，攻击再+" + Math.round(yBonus * 100) + "%", tier: tier, color: "y" };
     }
     if (ctx.classId === "surv") {
-      var add = Math.max(0, Math.min(4 * n, st.shieldCap - st.shield));
+      var perSh = tier >= 5 ? 8 : (tier === 4 ? 6 : 4);
+      var add = Math.max(0, Math.min(perSh * n, st.shieldCap - st.shield));
       st.shield += add;
-      return "黄珠×" + n + " 黄+" + n + "，护盾 +" + add;
+      return { text: "黄珠×" + n + " " + tierLabel + " 黄+" + n + "，护盾 +" + add, tier: tier, color: "y" };
     }
+    var slowMul = tier >= 5 ? 2 : (tier === 4 ? 1.75 : 1.5);
+    var slowSec = tier >= 5 ? 4 : (tier === 4 ? 3.5 : 3);
     var lock = getLock(st);
-    applySlow(lock, 1.5, 3, now);
-    return "黄珠×" + n + " 黄+" + n + "，目标攻速变慢";
+    applySlow(lock, slowMul, slowSec, now);
+    return { text: "黄珠×" + n + " " + tierLabel + " 黄+" + n + "，目标攻速变慢", tier: tier, color: "y" };
   }
-  return "";
+  return { text: "", tier: tier, color: group.color };
 }
 function canCast(kind, st, ctx, now) {
   if (kind === "slash") {
@@ -629,6 +691,11 @@ export {
   makeBattleState,
   makeCtxFrom,
   resolveGroup,
+  spawnFromTemplates,
+  WAVES,
+  livingMobs,
+  tryAdvanceWave,
+  matchTier,
   canCast,
   castSkill,
   dealDamage,

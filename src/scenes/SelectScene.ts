@@ -6,7 +6,7 @@ import { W } from "../config";
 const HINTS = [
   "红珠抬攻击", "裂击解锁", "绿珠回血", "黄珠职业增效",
   "点怪锁定", "疾行鬼很快", "锈剑 +2 攻击", "职业技解锁",
-  "力量很高", "领主 16 秒强化",
+  "力量很高", "领主入场后强化",
 ];
 
 export class SelectScene extends Phaser.Scene {

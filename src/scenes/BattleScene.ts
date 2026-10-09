@@ -4,7 +4,7 @@ import {
   makeBattleState, makeCtxFrom, generateBoard, findMatches, hasMove,
   reshuffleData, swapCells, isAdjacent, resolveGroup, canCast, castSkill,
   dealDamage, strikeHero, allDead, getLock, inRange, unitAttack, unitInterval,
-  moveToward, clearExpired, maybeEnrageLord, applySlow, Color,
+  moveToward, clearExpired, maybeEnrageLord, applySlow, tryAdvanceWave, Color,
 } from "../logic/rules";
 import { loadSave, persist } from "../save";
 import { W } from "../config";
@@ -250,9 +250,9 @@ export class BattleScene extends Phaser.Scene {
     this.hpText.setText(`英雄 · ${CLASS_NAMES[save.classId]} · 力${h.str} 智${h.int} 敏${h.agi}\n${h.hp} / ${h.max}`);
     this.shieldText.setText(`护盾 ${this.battle.shield} / ${this.battle.shieldCap}`);
     const buffs: string[] = [];
-    if (h.redUntil > now) buffs.push("红攻");
-    if (h.yellowAtkUntil > now) buffs.push("黄攻");
-    if (h.tempIntUntil > now) buffs.push("智+");
+    if (h.redUntil > now) buffs.push(`红攻+${Math.round((h.redBonus || 0) * 100)}%`);
+    if (h.yellowAtkUntil > now) buffs.push(`黄攻+${Math.round((h.yellowAtkBonus || 0) * 100)}%`);
+    if (h.tempIntUntil > now) buffs.push(`智+${h.tempInt || 0}`);
     this.resText.setText(`蓝 ${this.battle.blue}  黄 ${this.battle.yellow}  护盾 ${this.battle.shield}  增效 ${buffs.join(" ") || "—"}`);
 
     const slashNote = this.slashBtn.getData("note") as Phaser.GameObjects.Text;
@@ -293,7 +293,8 @@ export class BattleScene extends Phaser.Scene {
     for (const m of this.battle.monsters) {
       if (this.over) break;
       if (m.hp <= 0) continue;
-      const spr = this.mobSpr.get(m.id)!;
+      const spr = this.mobSpr.get(m.id);
+      if (!spr) continue;
       if (inRange(m, hero)) {
         if (spr.anims.currentAnim?.key === `e${m.kind}-walk`) spr.play(`e${m.kind}-idle`);
         if (now >= m.nextAt) this.doMobAttack(m, now);
@@ -303,8 +304,72 @@ export class BattleScene extends Phaser.Scene {
       }
     }
     if (this.over) return;
+    const wave = tryAdvanceWave(this.battle, now);
+    if (wave.advanced) {
+      this.spawnWaveActors(wave.spawned || []);
+      this.showWaveBanner(wave.waveIndex + 1);
+      this.pushLog(`第 ${wave.waveIndex + 1} 波来袭`);
+    } else if (wave.done && allDead(this.battle)) {
+      this.finish(true);
+      return;
+    }
     this.placeActors();
     this.refreshHud();
+  }
+
+  private flashTier(tier: number) {
+    const label = tier >= 5 ? "五连" : "四连";
+    const tx = this.add.text(W / 2, BOARD_TOP - 18, label, {
+      fontSize: tier >= 5 ? "22px" : "18px",
+      color: tier >= 5 ? "#ffe08a" : "#a8d8ff",
+      fontStyle: "bold",
+      stroke: "#1a120c",
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(1600).setAlpha(0);
+    this.tweens.add({
+      targets: tx, alpha: 1, y: BOARD_TOP - 36, duration: 280, yoyo: true, hold: 200,
+      onComplete: () => tx.destroy(),
+    });
+  }
+
+  private showWaveBanner(n: number) {
+    const tx = this.add.text(W / 2, STAGE_TOP + 40, `第 ${n} 波`, {
+      fontSize: "20px", color: "#e6d3b0", fontStyle: "bold",
+      stroke: "#1a120c", strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(1600).setAlpha(0);
+    this.tweens.add({
+      targets: tx, alpha: 1, duration: 300, hold: 700, yoyo: true,
+      onComplete: () => tx.destroy(),
+    });
+  }
+
+  private spawnWaveActors(spawned: any[]) {
+    for (const m of spawned) {
+      m.x = 11 + m.enter * 0.2;
+      const big = !!m.elite || !!m.isLord;
+      const spr = this.add.sprite(0, 0, `e${m.kind}-idle-0`)
+        .setDisplaySize(big ? 58 : 48, big ? 66 : 54)
+        .setInteractive({ useHandCursor: true });
+      if (m.elite) spr.setTint(0xffe0a0);
+      spr.play(`e${m.kind}-walk`);
+      spr.on("pointerdown", () => {
+        if (this.over || m.hp <= 0) return;
+        this.battle.lockId = m.id;
+        this.refreshHud();
+      });
+      this.mobSpr.set(m.id, spr);
+      const bg = this.add.rectangle(0, 0, 44, 5, 0x4a1010).setOrigin(0.5, 1);
+      const fill = this.add.rectangle(0, 0, 44, 5, 0xe25555).setOrigin(0, 1);
+      const tag = m.elite
+        ? this.add.text(0, 0, "精英", { fontSize: "10px", color: "#ffd36a" }).setOrigin(0, 1)
+        : undefined;
+      this.mobBars.set(m.id, { bg, fill, tag });
+      this.time.delayedCall(120, () => {
+        m.x = m.homeX;
+        m.y = m.homeY;
+        if (m.hp > 0) spr.play(`e${m.kind}-idle`);
+      });
+    }
   }
 
   private doHeroAttack(now: number) {
@@ -417,13 +482,26 @@ export class BattleScene extends Phaser.Scene {
       if (!groups.length) break;
       steps++;
       const now = this.elapsed();
-      const logs = groups.map((g: any) => resolveGroup(g, this.battle, ctx, now));
-      this.pushLog((steps > 1 ? "连锁 " : "") + logs.join("；"));
+      const results = groups.map((g: any) => resolveGroup(g, this.battle, ctx, now));
+      this.pushLog((steps > 1 ? "连锁 " : "") + results.map((r: any) => r.text).join("；"));
+      for (const r of results) {
+        if (r.tier >= 4) this.flashTier(r.tier);
+        if (r.tier >= 5 && (r.color === "r" || (r.color === "y" && save.classId === "out"))) {
+          this.redGlow.setVisible(true);
+        }
+      }
       // pop
-      for (const g of groups) {
+      for (let gi = 0; gi < groups.length; gi++) {
+        const g = groups[gi];
+        const tier = results[gi].tier;
         for (const cell of g.cells) {
           const img = this.beads[cell.r][cell.c];
           if (img) {
+            if (tier >= 4) {
+              const ring = this.add.rectangle(img.x, img.y, BEAD_DRAW + 8, BEAD_DRAW + 8)
+                .setStrokeStyle(tier >= 5 ? 3 : 2, tier >= 5 ? 0xffe080 : 0xc0e0ff).setDepth(800);
+              this.tweens.add({ targets: ring, alpha: 0, duration: 220, onComplete: () => ring.destroy() });
+            }
             await new Promise<void>((res) => {
               this.tweens.add({ targets: img, alpha: 0, duration: 100, onComplete: () => { img.destroy(); res(); } });
             });
