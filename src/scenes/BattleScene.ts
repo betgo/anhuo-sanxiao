@@ -14,6 +14,9 @@ const BEAD = 36;
 const BEAD_DRAW = 32;
 const STAGE_TOP = 70;
 const BOARD_TOP = 340;
+const BOARD_W = COLS * BEAD + 8;
+const LEFT = Math.floor((W - BOARD_W) / 2);
+const STAGE_W = BOARD_W;
 
 export class BattleScene extends Phaser.Scene {
   private levelIndex = 0;
@@ -22,8 +25,11 @@ export class BattleScene extends Phaser.Scene {
   private beads: (Phaser.GameObjects.Image | null)[][] = [];
   private heroSpr!: Phaser.GameObjects.Sprite;
   private mobSpr = new Map<number, Phaser.GameObjects.Sprite>();
-  private lockRing!: Phaser.GameObjects.Rectangle;
   private selRing!: Phaser.GameObjects.Rectangle;
+  private heroBarBg!: Phaser.GameObjects.Rectangle;
+  private heroBarFill!: Phaser.GameObjects.Rectangle;
+  private mobBars = new Map<number, { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle }>();
+  private redGlow!: Phaser.GameObjects.Rectangle;
   private sel: { r: number; c: number } | null = null;
   private busy = false;
   private over = false;
@@ -55,16 +61,18 @@ export class BattleScene extends Phaser.Scene {
     this.mobSpr.clear();
 
     this.add.rectangle(0, 0, W, 2000, 0x1a120c).setOrigin(0);
-    this.add.text(12, 10, `第 ${this.levelIndex + 1} / 10 关 · ${lv.name}`, { fontSize: "12px", color: "#8a7355" });
-    this.teachText = this.add.text(12, 28, lv.teach, { fontSize: "12px", color: "#cbb892", wordWrap: { width: W - 24 } });
+    this.add.text(LEFT, 10, `第 ${this.levelIndex + 1} / 10 关 · ${lv.name}`, { fontSize: "12px", color: "#8a7355" });
+    this.teachText = this.add.text(LEFT, 28, lv.teach, { fontSize: "12px", color: "#cbb892", wordWrap: { width: BOARD_W } });
 
     // stage
-    this.add.rectangle(12, STAGE_TOP, W - 24, 130, 0x140e0a).setOrigin(0).setStrokeStyle(2, 0x5a3b28);
-    this.add.rectangle(12, STAGE_TOP + 120, W - 24, 10, 0x3a2618).setOrigin(0);
+    this.add.rectangle(LEFT, STAGE_TOP, STAGE_W, 130, 0x140e0a).setOrigin(0).setStrokeStyle(2, 0x5a3b28);
+    this.add.rectangle(LEFT, STAGE_TOP + 120, STAGE_W, 10, 0x3a2618).setOrigin(0);
 
     this.heroSpr = this.add.sprite(0, 0, "hero-idle-0").setDisplaySize(48, 54);
     this.heroSpr.play("hero-idle");
-    this.lockRing = this.add.rectangle(0, 0, 52, 58).setStrokeStyle(2, 0xe2b434).setVisible(false);
+    this.heroBarBg = this.add.rectangle(0, 0, 44, 5, 0x4a1010).setOrigin(0.5, 1);
+    this.heroBarFill = this.add.rectangle(0, 0, 44, 5, 0x3ecf6a).setOrigin(0, 1);
+    this.redGlow = this.add.rectangle(0, 0, 56, 62, 0xff3030, 0.35).setVisible(false);
     this.selRing = this.add.rectangle(0, 0, BEAD_DRAW + 6, BEAD_DRAW + 6).setStrokeStyle(2, 0xf3e6c0).setVisible(false);
 
     for (const m of this.battle.monsters) {
@@ -77,6 +85,9 @@ export class BattleScene extends Phaser.Scene {
         this.refreshHud();
       });
       this.mobSpr.set(m.id, spr);
+      const bg = this.add.rectangle(0, 0, 44, 5, 0x4a1010).setOrigin(0.5, 1);
+      const fill = this.add.rectangle(0, 0, 44, 5, 0xe25555).setOrigin(0, 1);
+      this.mobBars.set(m.id, { bg, fill });
       this.time.delayedCall(180 * m.enter, () => {
         m.x = m.homeX;
         m.y = m.homeY;
@@ -84,13 +95,13 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // hero card
-    this.add.image(36, 220, `hero-${save.classId}`).setDisplaySize(40, 45);
-    this.hpText = this.add.text(64, 200, "", { fontSize: "13px", color: "#e6d3b0" });
-    this.shieldText = this.add.text(64, 220, "", { fontSize: "12px", color: "#8a7355" });
-    this.resText = this.add.text(12, 250, "", { fontSize: "12px", color: "#cbb892" });
+    this.add.image(LEFT + 24, 220, `hero-${save.classId}`).setDisplaySize(40, 45);
+    this.hpText = this.add.text(LEFT + 52, 200, "", { fontSize: "13px", color: "#e6d3b0" });
+    this.shieldText = this.add.text(LEFT + 52, 220, "", { fontSize: "12px", color: "#8a7355" });
+    this.resText = this.add.text(LEFT, 250, "", { fontSize: "12px", color: "#cbb892" });
 
     // board bg
-    this.add.rectangle(12, BOARD_TOP - 4, COLS * BEAD + 8, ROWS * BEAD + 8, 0x140e0a)
+    this.add.rectangle(LEFT, BOARD_TOP - 4, BOARD_W, ROWS * BEAD + 8, 0x140e0a)
       .setOrigin(0).setStrokeStyle(2, 0x5a3b28);
 
     this.board = generateBoard();
@@ -112,14 +123,15 @@ export class BattleScene extends Phaser.Scene {
     const legend = ["r|红·加攻", "b|蓝·技能", "g|绿·治疗", "y|黄·职业"];
     legend.forEach((s, i) => {
       const [c, lab] = s.split("|");
-      this.add.image(40 + i * 95, BOARD_TOP + ROWS * BEAD + 24, `bead-${c}`).setDisplaySize(16, 16);
-      this.add.text(52 + i * 95, BOARD_TOP + ROWS * BEAD + 24, lab, { fontSize: "11px", color: "#a89070" }).setOrigin(0, 0.5);
+      const x = LEFT + 20 + i * 70;
+      this.add.image(x, BOARD_TOP + ROWS * BEAD + 24, `bead-${c}`).setDisplaySize(16, 16);
+      this.add.text(x + 12, BOARD_TOP + ROWS * BEAD + 24, lab, { fontSize: "11px", color: "#a89070" }).setOrigin(0, 0.5);
     });
 
-    this.logText = this.add.text(12, BOARD_TOP + ROWS * BEAD + 48, "", { fontSize: "11px", color: "#8a7355", wordWrap: { width: W - 24 } });
+    this.logText = this.add.text(LEFT, BOARD_TOP + ROWS * BEAD + 48, "", { fontSize: "11px", color: "#8a7355", wordWrap: { width: BOARD_W } });
 
-    this.slashBtn = this.makeSkillBtn(90, 700, "裂击", () => this.onCast("slash"));
-    this.ultBtn = this.makeSkillBtn(300, 700, "职业技", () => this.onCast("ult"));
+    this.slashBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 - 80, 700, "裂击", () => this.onCast("slash"));
+    this.ultBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 + 80, 700, "职业技", () => this.onCast("ult"));
 
     this.pushLog(`第 ${this.levelIndex + 1} 关 · ${lv.name}`);
     this.refreshHud();
@@ -152,29 +164,60 @@ export class BattleScene extends Phaser.Scene {
     this.selRing.setVisible(false);
   }
 
-  private beadX(c: number) { return 16 + c * BEAD + BEAD / 2; }
+  private beadX(c: number) { return LEFT + 4 + c * BEAD + BEAD / 2; }
   private beadY(r: number) { return BOARD_TOP + r * BEAD + BEAD / 2; }
 
-  private px(x: number) { return 24 + x * CELL; }
+  private px(x: number) { return LEFT + 8 + x * CELL; }
   private py(y: number) { return STAGE_TOP + 100 - y * 16; }
 
   private placeActors() {
     const h = this.battle.hero;
-    this.heroSpr.setPosition(this.px(h.x), this.py(h.y));
+    const hx = this.px(h.x);
+    const hy = this.py(h.y);
+    this.heroSpr.setPosition(hx, hy);
+    this.redGlow.setPosition(hx, hy);
+    this.heroBarBg.setPosition(hx, hy - 30).setVisible(h.hp > 0);
+    const hRatio = Math.max(0, h.hp / h.max);
+    this.heroBarFill.setPosition(hx - 22, hy - 30).setDisplaySize(44 * hRatio, 5).setVisible(h.hp > 0);
+    this.heroBarFill.setFillStyle(hRatio > 0.3 ? 0x3ecf6a : 0xe25555);
+    const now = this.elapsed();
+    this.redGlow.setVisible(h.redUntil > now && h.hp > 0);
+
     for (const m of this.battle.monsters) {
       const spr = this.mobSpr.get(m.id);
       if (!spr) continue;
-      spr.setPosition(this.px(m.x), this.py(m.y));
+      const mx = this.px(m.x);
+      const my = this.py(m.y);
+      spr.setPosition(mx, my);
       spr.setDepth(400 - Math.round(m.x * 10));
+      const bar = this.mobBars.get(m.id);
       if (m.hp <= 0) {
         if (spr.anims.currentAnim?.key !== `e${m.kind}-down`) spr.play(`e${m.kind}-down`);
         spr.setAlpha(0.45).setAngle(70);
+        bar?.bg.setVisible(false);
+        bar?.fill.setVisible(false);
+      } else if (bar) {
+        const ratio = Math.max(0, m.hp / m.max);
+        bar.bg.setVisible(true).setPosition(mx, my - 30);
+        bar.fill.setVisible(true).setPosition(mx - 22, my - 30).setDisplaySize(44 * ratio, 5);
       }
     }
-    const lock = getLock(this.battle);
-    if (lock && lock.hp > 0) {
-      this.lockRing.setVisible(true).setPosition(this.px(lock.x), this.py(lock.y));
-    } else this.lockRing.setVisible(false);
+  }
+
+  private flashHit(x: number, y: number) {
+    const flash = this.add.rectangle(x, y, 48, 54, 0xffffff, 0.85).setDepth(900);
+    this.tweens.add({
+      targets: flash, alpha: 0, duration: 160,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private floatNum(x: number, y: number, text: string, color = "#ffd36a") {
+    const t = this.add.text(x, y - 20, text, { fontSize: "14px", color, fontStyle: "bold" }).setOrigin(0.5).setDepth(950);
+    this.tweens.add({
+      targets: t, y: y - 46, alpha: 0, duration: 650,
+      onComplete: () => t.destroy(),
+    });
   }
 
   private pushLog(line: string) {
@@ -257,6 +300,13 @@ export class BattleScene extends Phaser.Scene {
     this.heroSpr.play("hero-attack");
     const dmg = unitAttack(this.battle.hero, now, !!LEVELS[this.levelIndex].sword);
     const hits = dealDamage(this.battle, target.id, dmg, false);
+    for (const h of hits) {
+      const spr = this.mobSpr.get(h.id);
+      if (spr) {
+        this.flashHit(spr.x, spr.y);
+        this.floatNum(spr.x, spr.y, `-${h.dmg}`);
+      }
+    }
     this.pushLog("普攻 " + hits.map((h: any) => `${h.dead ? "击倒" : "打中"} ${h.name} ${h.dmg}`).join("，"));
     this.battle.hero.nextAt = now + unitInterval(this.battle.hero, now);
     this.heroSpr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
@@ -271,6 +321,8 @@ export class BattleScene extends Phaser.Scene {
     spr?.play(`e${m.kind}-attack`);
     const dmg = unitAttack(m, now, false);
     const hit = strikeHero(this.battle, dmg);
+    this.flashHit(this.heroSpr.x, this.heroSpr.y);
+    this.floatNum(this.heroSpr.x, this.heroSpr.y, `-${dmg}`, "#ff8a8a");
     this.refreshHud();
     let line = `${m.name} 打中 ${dmg}`;
     if (hit.absorbed) line += `，护盾抵消 ${hit.absorbed}`;
@@ -442,9 +494,16 @@ export class BattleScene extends Phaser.Scene {
       applySlow(lock, result.slow.mul, result.slow.sec, now);
     }
     if (result.attack) {
-      const t = getLock(this.battle);
-      if (t) {
-        dealDamage(this.battle, t.id, result.attack, kind === "slash");
+      const tgt = getLock(this.battle);
+      if (tgt) {
+        const hits = dealDamage(this.battle, tgt.id, result.attack, kind === "slash");
+        for (const h of hits) {
+          const spr = this.mobSpr.get(h.id);
+          if (spr) {
+            this.flashHit(spr.x, spr.y);
+            this.floatNum(spr.x, spr.y, `-${h.dmg}`, "#fff0a0");
+          }
+        }
         if (allDead(this.battle)) {
           this.finish(true);
           return;

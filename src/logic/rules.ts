@@ -251,10 +251,13 @@ function unitInterval(u, now) {
   if (u.slowUntil > now && u.slowMul > 1) return base * u.slowMul;
   return base;
 }
+function mobAtk(str) {
+  return Math.round(2 + str * 0.5);
+}
 function unitAttack(u, now, sword) {
+  if (u.side !== "hero") return mobAtk(u.str);
   var atk = baseAtk(u.str, !!sword);
-  if (u.side === "hero") atk = Math.round(atk * heroAtkMult(u, now));
-  return atk;
+  return Math.round(atk * heroAtkMult(u, now));
 }
 
 function makeBattleState(lv, classId, amulet) {
@@ -593,6 +596,7 @@ export {
   inRange,
   dist,
   unitAttack,
+  mobAtk,
   unitInterval,
   moveSpeed,
   skillMult,

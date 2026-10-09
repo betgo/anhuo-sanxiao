@@ -19,6 +19,7 @@ import {
   castSkill,
   canCast,
   unitAttack,
+  mobAtk,
   unitInterval,
   maybeEnrageLord,
   applySlow,
@@ -370,5 +371,46 @@ describe("P0 — hero death via strikeHero", () => {
     st.hero.hp = 7;
     strikeHero(st, 7);
     expect(st.hero.hp).toBe(0);
+  });
+});
+
+describe("monster attack", () => {
+  it("mob atk formula 2 + str*0.5", () => {
+    expect(mobAtk(6)).toBe(5);
+    expect(mobAtk(5)).toBe(5);
+    expect(mobAtk(14)).toBe(9);
+    const st = makeBattleState(LEVELS[1], "out", false);
+    expect(unitAttack(st.monsters[0], 0, false)).toBe(mobAtk(st.monsters[0].str));
+    expect(unitAttack(st.hero, 0, false)).toBe(baseAtk(st.hero.str, false));
+  });
+});
+
+describe("monster vs hero attack formulas (product P0)", () => {
+  it("mobAtk = round(2 + str*0.5); examples 6→5, 5→5, 14→9", () => {
+    expect(mobAtk(6)).toBe(5);
+    expect(mobAtk(5)).toBe(5);
+    expect(mobAtk(14)).toBe(9);
+    expect(mobAtk(8)).toBe(6);
+    expect(mobAtk(12)).toBe(8);
+    expect(mobAtk(10)).toBe(7);
+  });
+
+  it("hero attack stays 4+str (+2 sword); not mob formula", () => {
+    expect(baseAtk(12, false)).toBe(16);
+    expect(baseAtk(8, false)).toBe(12);
+    expect(baseAtk(4, false)).toBe(8);
+    expect(baseAtk(10, true)).toBe(16);
+    const st = makeBattleState(LEVELS[0], "out", false);
+    expect(unitAttack(st.hero, 0, false)).toBe(4 + st.hero.str);
+    expect(unitAttack(st.hero, 0, false)).not.toBe(mobAtk(st.hero.str));
+  });
+
+  it("unitAttack routes mobs through mobAtk for every chapter-1 str", () => {
+    for (let i = 0; i < LEVELS.length; i++) {
+      const st = makeBattleState(LEVELS[i], "out", false);
+      for (const m of st.monsters) {
+        expect(unitAttack(m, 0, false)).toBe(mobAtk(m.str));
+      }
+    }
   });
 });
