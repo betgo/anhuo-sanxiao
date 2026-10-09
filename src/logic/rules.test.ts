@@ -112,20 +112,20 @@ describe("ten levels — count, hp, melee/ranged", () => {
     expectSquad(0, 3, 24, [false, false, false]);
     expectSquad(1, 3, 30, [false, false, false]);
     expectSquad(2, 4, 24, [false, false, false, false]);
-    expectSquad(3, 4, [35, 35, 35, 63], [true, true, true, true]);
-    expectSquad(4, 5, [33, 33, 33, 33, 59], [false, false, false, false, false]);
-    expectSquad(5, 6, [28, 28, 28, 28, 28, 50], [false, false, false, false, false, false]);
-    expectSquad(6, 5, [50, 50, 50, 50, 90], [false, false, false, false, false]);
-    expectSquad(7, 5, [60, 60, 60, 108, 108], [true, true, true, true, true]);
-    expectSquad(8, 6, [50, 50, 50, 50, 90, 90], [false, false, false, false, false, false]);
-    expectSquad(9, 6, [24, 24, 24, 24, 43, 120], [false, false, false, false, false, true]);
+    expectSquad(3, 4, [35, 35, 35, 53], [true, true, true, true]);
+    expectSquad(4, 5, [33, 33, 33, 33, 50], [false, false, false, false, false]);
+    expectSquad(5, 6, [28, 28, 28, 28, 28, 42], [false, false, false, false, false, false]);
+    expectSquad(6, 5, [50, 50, 50, 50, 75], [false, false, false, false, false]);
+    expectSquad(7, 5, [60, 60, 60, 90, 90], [true, true, true, true, true]);
+    expectSquad(8, 6, [50, 50, 50, 50, 75, 75], [false, false, false, false, false, false]);
+    expectSquad(9, 6, [24, 24, 24, 24, 36, 120], [false, false, false, false, false, true]);
   });
 
   it("elites marked and scaled", () => {
     const e = LEVELS[3].squad[3];
     expect(e.elite).toBe(true);
-    expect(e.hp).toBe(63);
-    expect(e.str).toBe(9);
+    expect(e.hp).toBe(53);
+    expect(e.str).toBe(8);
     expect(LEVELS[9].squad[4].elite).toBe(true);
     expect(LEVELS[9].squad[5].kind).toBe("10");
   });
@@ -553,10 +553,10 @@ describe("P0 — hero death via strikeHero", () => {
 });
 
 describe("monster attack", () => {
-  it("mob atk formula 2 + str*0.5", () => {
-    expect(mobAtk(6)).toBe(5);
-    expect(mobAtk(5)).toBe(5);
-    expect(mobAtk(14)).toBe(9);
+  it("mob atk formula 1 + str*0.4", () => {
+    expect(mobAtk(6)).toBe(3);
+    expect(mobAtk(5)).toBe(3);
+    expect(mobAtk(14)).toBe(7);
     const st = makeBattleState(LEVELS[1], "out", false);
     expect(unitAttack(st.monsters[0], 0, false)).toBe(mobAtk(st.monsters[0].str));
     expect(unitAttack(st.hero, 0, false)).toBe(baseAtk(st.hero.str, false));
@@ -564,13 +564,13 @@ describe("monster attack", () => {
 });
 
 describe("monster vs hero attack formulas (product P0)", () => {
-  it("mobAtk = round(2 + str*0.5); examples 6→5, 5→5, 14→9", () => {
-    expect(mobAtk(6)).toBe(5);
-    expect(mobAtk(5)).toBe(5);
-    expect(mobAtk(14)).toBe(9);
-    expect(mobAtk(8)).toBe(6);
-    expect(mobAtk(12)).toBe(8);
-    expect(mobAtk(10)).toBe(7);
+  it("mobAtk = round(1 + str*0.4); examples 6→3, 5→3, 14→7", () => {
+    expect(mobAtk(6)).toBe(3);
+    expect(mobAtk(5)).toBe(3);
+    expect(mobAtk(14)).toBe(7);
+    expect(mobAtk(8)).toBe(4);
+    expect(mobAtk(12)).toBe(6);
+    expect(mobAtk(10)).toBe(5);
   });
 
   it("hero attack stays 4+str (+2 sword); not mob formula", () => {
@@ -632,7 +632,7 @@ describe("chapter-1 squad counts + elite scaling (product)", () => {
     });
   });
 
-  it("normal single hp/str stay on base table; elite = round(hp*1.8), round(str*1.3)", () => {
+  it("normal single hp/str stay on base table; elite = round(hp*1.5), round(str*1.15)", () => {
     PLAN.forEach((p, i) => {
       const base = BASE[p.baseIdx];
       const squad = LEVELS[i].squad as any[];
@@ -647,8 +647,8 @@ describe("chapter-1 squad counts + elite scaling (product)", () => {
         expect(m.name).toBe(base.name);
         expect(m.kind).toBe(base.kind);
         if (m.elite) {
-          expect(m.hp).toBe(Math.round(base.hp * 1.8));
-          expect(m.str).toBe(Math.round(base.str * 1.3));
+          expect(m.hp).toBe(Math.round(base.hp * 1.5));
+          expect(m.str).toBe(Math.round(base.str * 1.15));
         } else {
           expect(m.hp).toBe(base.hp);
           expect(m.str).toBe(base.str);

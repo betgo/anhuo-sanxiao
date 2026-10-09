@@ -17,6 +17,9 @@ const BOARD_TOP = 340;
 const BOARD_W = COLS * BEAD + 8;
 const LEFT = Math.floor((W - BOARD_W) / 2);
 const STAGE_W = BOARD_W;
+const LOG_MAX = 50;
+const LOG_VIEW_H = 72;
+const LOG_PAD = 4;
 
 export class BattleScene extends Phaser.Scene {
   private levelIndex = 0;
@@ -38,10 +41,17 @@ export class BattleScene extends Phaser.Scene {
   private shieldText!: Phaser.GameObjects.Text;
   private resText!: Phaser.GameObjects.Text;
   private logText!: Phaser.GameObjects.Text;
+  private logHit!: Phaser.GameObjects.Zone;
+  private logContainer!: Phaser.GameObjects.Container;
   private teachText!: Phaser.GameObjects.Text;
   private slashBtn!: Phaser.GameObjects.Container;
   private ultBtn!: Phaser.GameObjects.Container;
   private logs: string[] = [];
+  private logScrollY = 0;
+  private logDragging = false;
+  private logDragLastY = 0;
+  private onLogPointerMove?: (p: Phaser.Input.Pointer) => void;
+  private onLogPointerUp?: () => void;
   private bannerRoot?: Phaser.GameObjects.Container;
   private autoTimer?: Phaser.Time.TimerEvent;
   private autoLeft = 0;
@@ -139,12 +149,49 @@ export class BattleScene extends Phaser.Scene {
       this.add.text(x + 12, BOARD_TOP + ROWS * BEAD + 24, lab, { fontSize: "11px", color: "#a89070" }).setOrigin(0, 0.5);
     });
 
-    this.logText = this.add.text(LEFT, BOARD_TOP + ROWS * BEAD + 48, "", { fontSize: "11px", color: "#8a7355", wordWrap: { width: BOARD_W } });
+    const logY = BOARD_TOP + ROWS * BEAD + 48;
+    this.add.rectangle(LEFT, logY, BOARD_W, LOG_VIEW_H, 0x100c08, 0.85)
+      .setOrigin(0).setStrokeStyle(1, 0x3a2618).setDepth(200);
+    this.logContainer = this.add.container(LEFT + LOG_PAD, logY + LOG_PAD).setDepth(210);
+    this.logText = this.add.text(0, 0, "", {
+      fontSize: "11px", color: "#8a7355", wordWrap: { width: BOARD_W - LOG_PAD * 2 }, lineSpacing: 2,
+    });
+    this.logContainer.add(this.logText);
+    const maskShape = this.make.graphics({ x: 0, y: 0 });
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(LEFT, logY, BOARD_W, LOG_VIEW_H);
+    this.logContainer.setMask(maskShape.createGeometryMask());
+    this.logHit = this.add.zone(LEFT, logY, BOARD_W, LOG_VIEW_H).setOrigin(0).setInteractive().setDepth(220);
+    this.logHit.on("wheel", (_p: any, _dx: number, dy: number) => {
+      this.logScrollY += dy * 0.35;
+      this.applyLogScroll();
+    });
+    this.logHit.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      this.logDragging = true;
+      this.logDragLastY = p.y;
+    });
+    this.onLogPointerMove = (p: Phaser.Input.Pointer) => {
+      if (!this.logDragging) return;
+      this.logScrollY -= (p.y - this.logDragLastY);
+      this.logDragLastY = p.y;
+      this.applyLogScroll();
+    };
+    this.onLogPointerUp = () => { this.logDragging = false; };
+    this.input.on("pointermove", this.onLogPointerMove);
+    this.input.on("pointerup", this.onLogPointerUp);
+    this.input.on("pointerupoutside", this.onLogPointerUp);
 
     this.slashBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 - 80, 700, "裂击", () => this.onCast("slash"));
     this.ultBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 + 80, 700, "职业技", () => this.onCast("ult"));
 
-    this.events.once("shutdown", () => this.clearAuto());
+    this.events.once("shutdown", () => {
+      this.clearAuto();
+      if (this.onLogPointerMove) this.input.off("pointermove", this.onLogPointerMove);
+      if (this.onLogPointerUp) {
+        this.input.off("pointerup", this.onLogPointerUp);
+        this.input.off("pointerupoutside", this.onLogPointerUp);
+      }
+    });
     this.pushLog(`第 ${this.levelIndex + 1} 关 · ${lv.name}`);
     this.refreshHud();
     this.placeActors();
@@ -236,9 +283,20 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private pushLog(line: string) {
-    this.logs.unshift(line);
-    this.logs = this.logs.slice(0, 4);
+    this.logs.push(line);
+    if (this.logs.length > LOG_MAX) this.logs = this.logs.slice(this.logs.length - LOG_MAX);
     this.logText.setText(this.logs.join("\n"));
+    // stick to bottom so newest stays visible
+    this.logScrollY = 1e9;
+    this.applyLogScroll();
+  }
+
+  private applyLogScroll() {
+    const viewInner = LOG_VIEW_H - LOG_PAD * 2;
+    const contentH = Math.max(this.logText.height, viewInner);
+    const maxScroll = Math.max(0, contentH - viewInner);
+    this.logScrollY = Math.max(0, Math.min(this.logScrollY, maxScroll));
+    this.logText.setY(-this.logScrollY);
   }
 
   private refreshHud() {

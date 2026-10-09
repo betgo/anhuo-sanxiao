@@ -46,8 +46,8 @@ function eliteOf(m) {
   return mon(
     m.kind,
     m.name,
-    Math.round(m.hp * 1.8),
-    Math.round(m.str * 1.3),
+    Math.round(m.hp * 1.5),
+    Math.round(m.str * 1.15),
     m.int,
     m.agi,
     m.ranged,
@@ -309,7 +309,7 @@ function unitInterval(u, now) {
   return base;
 }
 function mobAtk(str) {
-  return Math.round(2 + str * 0.5);
+  return Math.round(1 + str * 0.4);
 }
 function unitAttack(u, now, sword) {
   if (u.side !== "hero") return mobAtk(u.str);
