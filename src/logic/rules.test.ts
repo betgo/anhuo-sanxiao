@@ -23,6 +23,7 @@ import {
   maybeEnrageLord,
   applySlow,
   getLock,
+  strikeHero,
 } from "./rules";
 
 describe("board constants", () => {
@@ -337,5 +338,37 @@ describe("skills — cost, CD, gate, rounding", () => {
     st.blue = 10;
     st.yellow = 1;
     expect(castSkill("ult", st, ctx, 0)).toBeNull();
+  });
+});
+
+describe("P0 — hero death via strikeHero", () => {
+  it("lethal hit sets hero hp to 0", () => {
+    const st = makeBattleState(LEVELS[0], "out", false);
+    st.shield = 0;
+    st.hero.hp = 10;
+    const hit = strikeHero(st, 15);
+    expect(hit.hp).toBe(10);
+    expect(hit.absorbed).toBe(0);
+    expect(st.hero.hp).toBe(0);
+    expect(st.heroHp).toBe(0);
+  });
+
+  it("shield absorbs before hp; leftover can still kill", () => {
+    const st = makeBattleState(LEVELS[0], "surv", false);
+    st.shield = 5;
+    st.hero.hp = 8;
+    const hit = strikeHero(st, 20);
+    expect(hit.absorbed).toBe(5);
+    expect(hit.hp).toBe(8);
+    expect(st.shield).toBe(0);
+    expect(st.hero.hp).toBe(0);
+  });
+
+  it("exact lethal does not go negative", () => {
+    const st = makeBattleState(LEVELS[0], "ctrl", false);
+    st.shield = 0;
+    st.hero.hp = 7;
+    strikeHero(st, 7);
+    expect(st.hero.hp).toBe(0);
   });
 });

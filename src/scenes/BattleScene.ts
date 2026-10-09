@@ -10,7 +10,8 @@ import { loadSave, persist } from "../save";
 import { W } from "../config";
 
 const CELL = 36;
-const BEAD = 40;
+const BEAD = 36;
+const BEAD_DRAW = 32;
 const STAGE_TOP = 70;
 const BOARD_TOP = 340;
 
@@ -22,6 +23,7 @@ export class BattleScene extends Phaser.Scene {
   private heroSpr!: Phaser.GameObjects.Sprite;
   private mobSpr = new Map<number, Phaser.GameObjects.Sprite>();
   private lockRing!: Phaser.GameObjects.Rectangle;
+  private selRing!: Phaser.GameObjects.Rectangle;
   private sel: { r: number; c: number } | null = null;
   private busy = false;
   private over = false;
@@ -63,6 +65,7 @@ export class BattleScene extends Phaser.Scene {
     this.heroSpr = this.add.sprite(0, 0, "hero-idle-0").setDisplaySize(48, 54);
     this.heroSpr.play("hero-idle");
     this.lockRing = this.add.rectangle(0, 0, 52, 58).setStrokeStyle(2, 0xe2b434).setVisible(false);
+    this.selRing = this.add.rectangle(0, 0, BEAD_DRAW + 6, BEAD_DRAW + 6).setStrokeStyle(2, 0xf3e6c0).setVisible(false);
 
     for (const m of this.battle.monsters) {
       m.x = 11 + m.enter * 0.35;
@@ -97,7 +100,8 @@ export class BattleScene extends Phaser.Scene {
       for (let c = 0; c < COLS; c++) {
         const color = this.board[r][c] as Color;
         const img = this.add.image(this.beadX(c), this.beadY(r), `bead-${color}`)
-          .setDisplaySize(36, 36).setInteractive({ useHandCursor: true });
+          .setInteractive({ useHandCursor: true });
+        this.fitBead(img);
         img.setData("r", r);
         img.setData("c", c);
         img.on("pointerdown", () => this.onBead(r, c));
@@ -108,7 +112,7 @@ export class BattleScene extends Phaser.Scene {
     const legend = ["r|红·加攻", "b|蓝·技能", "g|绿·治疗", "y|黄·职业"];
     legend.forEach((s, i) => {
       const [c, lab] = s.split("|");
-      this.add.image(40 + i * 95, BOARD_TOP + ROWS * BEAD + 24, `bead-${c}`).setDisplaySize(18, 18);
+      this.add.image(40 + i * 95, BOARD_TOP + ROWS * BEAD + 24, `bead-${c}`).setDisplaySize(16, 16);
       this.add.text(52 + i * 95, BOARD_TOP + ROWS * BEAD + 24, lab, { fontSize: "11px", color: "#a89070" }).setOrigin(0, 0.5);
     });
 
@@ -132,6 +136,20 @@ export class BattleScene extends Phaser.Scene {
 
   private elapsed() {
     return (this.time.now - this.t0) / 1000;
+  }
+
+
+  private fitBead(img: Phaser.GameObjects.Image) {
+    img.setScale(1);
+    img.setDisplaySize(BEAD_DRAW, BEAD_DRAW);
+  }
+
+  private showSel(r: number, c: number) {
+    this.selRing.setVisible(true).setPosition(this.beadX(c), this.beadY(r)).setDepth(50);
+  }
+
+  private hideSel() {
+    this.selRing.setVisible(false);
   }
 
   private beadX(c: number) { return 16 + c * BEAD + BEAD / 2; }
@@ -198,6 +216,10 @@ export class BattleScene extends Phaser.Scene {
     if (maybeEnrageLord(this.battle, now)) this.pushLog("地牢领主力量 +4");
 
     const hero = this.battle.hero;
+    if (hero.hp <= 0) {
+      this.finish(false);
+      return;
+    }
     const target = getLock(this.battle);
     if (target) {
       if (inRange(hero, target)) {
@@ -208,8 +230,10 @@ export class BattleScene extends Phaser.Scene {
         moveToward(hero, target, dt);
       }
     }
+    if (this.over) return;
 
     for (const m of this.battle.monsters) {
+      if (this.over) break;
       if (m.hp <= 0) continue;
       const spr = this.mobSpr.get(m.id)!;
       if (inRange(m, hero)) {
@@ -220,11 +244,13 @@ export class BattleScene extends Phaser.Scene {
         moveToward(m, hero, dt);
       }
     }
+    if (this.over) return;
     this.placeActors();
     this.refreshHud();
   }
 
   private doHeroAttack(now: number) {
+    if (this.over || this.battle.hero.hp <= 0) return;
     const target = getLock(this.battle);
     if (!target) return;
     const save = loadSave();
@@ -240,10 +266,12 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private doMobAttack(m: any, now: number) {
+    if (this.over || this.battle.hero.hp <= 0) return;
     const spr = this.mobSpr.get(m.id);
     spr?.play(`e${m.kind}-attack`);
     const dmg = unitAttack(m, now, false);
     const hit = strikeHero(this.battle, dmg);
+    this.refreshHud();
     let line = `${m.name} 打中 ${dmg}`;
     if (hit.absorbed) line += `，护盾抵消 ${hit.absorbed}`;
     if (hit.hp) line += `，生命 -${hit.hp}`;
@@ -259,22 +287,21 @@ export class BattleScene extends Phaser.Scene {
     if (this.busy || this.over) return;
     if (!this.sel) {
       this.sel = { r, c };
-      this.beads[r][c]?.setScale(1.15);
+      this.showSel(r, c);
       return;
     }
     if (this.sel.r === r && this.sel.c === c) {
-      this.beads[r][c]?.setScale(1);
+      this.hideSel();
       this.sel = null;
       return;
     }
     if (!isAdjacent(this.sel.r, this.sel.c, r, c)) {
-      this.beads[this.sel.r][this.sel.c]?.setScale(1);
       this.sel = { r, c };
-      this.beads[r][c]?.setScale(1.15);
+      this.showSel(r, c);
       return;
     }
     const a = this.sel;
-    this.beads[a.r][a.c]?.setScale(1);
+    this.hideSel();
     this.sel = null;
     await this.trySwap(a.r, a.c, r, c);
   }
@@ -331,7 +358,7 @@ export class BattleScene extends Phaser.Scene {
           const img = this.beads[cell.r][cell.c];
           if (img) {
             await new Promise<void>((res) => {
-              this.tweens.add({ targets: img, alpha: 0, scale: 0.3, duration: 100, onComplete: () => { img.destroy(); res(); } });
+              this.tweens.add({ targets: img, alpha: 0, duration: 100, onComplete: () => { img.destroy(); res(); } });
             });
             this.beads[cell.r][cell.c] = null;
             this.board[cell.r][cell.c] = null;
@@ -362,7 +389,8 @@ export class BattleScene extends Phaser.Scene {
           const color = COLORS[(Math.random() * 4) | 0] as Color;
           this.board[r][c] = color;
           const img = this.add.image(this.beadX(c), this.beadY(r) - ROWS * BEAD, `bead-${color}`)
-            .setDisplaySize(36, 36).setInteractive({ useHandCursor: true });
+            .setInteractive({ useHandCursor: true });
+          this.fitBead(img);
           const rr = r, cc = c;
           img.on("pointerdown", () => this.onBead(rr, cc));
           this.beads[r][c] = img;
@@ -373,8 +401,8 @@ export class BattleScene extends Phaser.Scene {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const img = this.beads[r][c]!;
-        img.setData("r", r); img.setData("c", c); img.setAlpha(1).setScale(1);
-        // rebind click with correct coords
+        img.setData("r", r); img.setData("c", c); img.setAlpha(1);
+        this.fitBead(img);
         img.removeAllListeners("pointerdown");
         const rr = r, cc = c;
         img.on("pointerdown", () => this.onBead(rr, cc));
@@ -390,7 +418,8 @@ export class BattleScene extends Phaser.Scene {
         this.beads[r][c]?.destroy();
         const color = this.board[r][c] as Color;
         const img = this.add.image(this.beadX(c), this.beadY(r), `bead-${color}`)
-          .setDisplaySize(36, 36).setInteractive({ useHandCursor: true });
+          .setInteractive({ useHandCursor: true });
+        this.fitBead(img);
         const rr = r, cc = c;
         img.on("pointerdown", () => this.onBead(rr, cc));
         this.beads[r][c] = img;
@@ -428,6 +457,9 @@ export class BattleScene extends Phaser.Scene {
   private finish(win: boolean) {
     if (this.over) return;
     this.over = true;
+    this.busy = true;
+    this.hideSel();
+    this.refreshHud();
     const save = loadSave();
     if (win) {
       save.cleared[this.levelIndex] = true;
@@ -437,8 +469,6 @@ export class BattleScene extends Phaser.Scene {
     const detail = win
       ? `全部击倒。剩余生命 ${Math.max(0, this.battle.hero.hp)}。`
       : `你倒下了。还剩 ${living} 只。装备还在。`;
-    this.time.delayedCall(400, () => {
-      this.scene.start("result", { win, levelIndex: this.levelIndex, detail });
-    });
+    this.scene.start("result", { win, levelIndex: this.levelIndex, detail });
   }
 }
