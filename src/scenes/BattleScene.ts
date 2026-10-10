@@ -32,6 +32,7 @@ const SKILL_Y = H - 36;
 
 export class BattleScene extends Phaser.Scene {
   private levelIndex = 0;
+  private classId: "out" | "surv" | "ctrl" = "out";
   private battle: any;
   private board: (Color | null)[][] = [];
   private beads: (Phaser.GameObjects.Image | null)[][] = [];
@@ -57,7 +58,7 @@ export class BattleScene extends Phaser.Scene {
   private logOpen = false;
   private logPanel?: Phaser.GameObjects.Container;
   private logDim?: Phaser.GameObjects.Rectangle;
-  private logBtnBg!: Phaser.GameObjects.Rectangle;
+  private logBtnBg!: Phaser.GameObjects.GameObject;
   private logBtnTx!: Phaser.GameObjects.Text;
   private ultBtn!: Phaser.GameObjects.Container;
   private logs: string[] = [];
@@ -82,6 +83,7 @@ export class BattleScene extends Phaser.Scene {
     addMuteButton(this, () => playBgm(this, AUDIO_KEYS.bgmBattle));
     playBgm(this, AUDIO_KEYS.bgmBattle);
     const save = loadSave();
+    this.classId = save.classId;
     const lv = LEVELS[this.levelIndex] as any;
     this.battle = makeBattleState(lv, save.classId, save.amulet);
     this.t0 = this.time.now;
@@ -92,25 +94,25 @@ export class BattleScene extends Phaser.Scene {
     this.mobSpr.clear();
 
     this.add.rectangle(0, 0, W, H, 0x1a120c).setOrigin(0);
-    // stage zone
-    this.add.rectangle(0, 0, W, STAGE_ZONE_H, 0x120e0a).setOrigin(0);
-    this.add.rectangle(LEFT, STAGE_TOP, STAGE_W, STAGE_H, 0x140e0a).setOrigin(0).setStrokeStyle(2, 0x5a3b28);
-    this.add.rectangle(LEFT, STAGE_TOP + STAGE_H - 8, STAGE_W, 8, 0x3a2618).setOrigin(0);
+    // stage zone — v2 bg (420×328)
+    this.add.image(0, 0, "bg-battle").setOrigin(0).setDisplaySize(W, STAGE_ZONE_H);
+    this.add.rectangle(LEFT, STAGE_TOP, STAGE_W, STAGE_H, 0x000000, 0).setOrigin(0).setStrokeStyle(1, 0x5a3b28);
 
     this.add.text(LEFT, 8, `第 ${this.levelIndex + 1}/10 · ${lv.name}`, {
       fontSize: "12px", color: "#8a7355",
     });
 
     // log button (left of mute at W-44)
-    this.logBtnBg = this.add.rectangle(W - 118, 22, 56, 24, 0x2a1c14, 0.9)
-      .setStrokeStyle(1, 0x8a6240).setInteractive({ useHandCursor: true }).setDepth(3000);
+    this.logBtnBg = this.add.image(W - 118, 22, "ui-log-btn")
+      .setDisplaySize(48, 48).setInteractive({ useHandCursor: true }).setDepth(3000) as any;
     this.logBtnTx = this.add.text(W - 118, 22, "日志", {
-      fontSize: "12px", color: "#e6d3b0",
+      fontSize: "11px", color: "#e6d3b0", fontStyle: "bold",
+      stroke: "#1a120c", strokeThickness: 3,
     }).setOrigin(0.5).setDepth(3001);
     this.logBtnBg.on("pointerdown", () => this.toggleLogPanel());
 
-    this.heroSpr = this.add.sprite(0, 0, "hero-idle-0").setDisplaySize(48, 48);
-    this.heroSpr.play("hero-idle");
+    this.heroSpr = this.add.sprite(0, 0, `hero-${this.classId}-idle-0`).setDisplaySize(48, 48);
+    this.heroSpr.play(`hero-${this.classId}-idle`);
     this.heroBarBg = this.add.rectangle(0, 0, 44, 5, 0x4a1010).setOrigin(0.5, 1);
     this.heroBarFill = this.add.rectangle(0, 0, 44, 5, 0x3ecf6a).setOrigin(0, 1);
     this.redGlow = this.add.rectangle(0, 0, 52, 52, 0xff3030, 0.35).setVisible(false);
@@ -148,9 +150,9 @@ export class BattleScene extends Phaser.Scene {
     this.shieldText = this.add.text(LEFT + 6, STAGE_ZONE_H - 24, "", { fontSize: "11px", color: "#8a7355" });
     this.resText = this.add.text(LEFT + 120, STAGE_ZONE_H - 32, "", { fontSize: "11px", color: "#cbb892" });
 
-    // board zone
-    this.add.rectangle(0, BOARD_ZONE_Y, W, H - BOARD_ZONE_Y, 0x1a120c).setOrigin(0);
-    this.add.rectangle(LEFT, BOARD_TOP - 4, BOARD_W, ROWS * BEAD + 8, 0x140e0a)
+    // board zone — v2 panel
+    this.add.image(0, BOARD_ZONE_Y, "board-panel").setOrigin(0).setDisplaySize(W, H - BOARD_ZONE_Y);
+    this.add.rectangle(LEFT, BOARD_TOP - 4, BOARD_W, ROWS * BEAD + 8, 0x140e0a, 0.35)
       .setOrigin(0).setStrokeStyle(2, 0x5a3b28);
 
     this.board = generateBoard();
@@ -195,7 +197,9 @@ export class BattleScene extends Phaser.Scene {
     this.logDim.on("pointerdown", () => this.closeLogPanel());
 
     this.logPanel = this.add.container(panelX, panelY).setDepth(2500).setVisible(false);
-    const bg = this.add.rectangle(LOG_PANEL_W / 2, LOG_PANEL_H / 2, LOG_PANEL_W, LOG_PANEL_H, 0x140e0a, 0.98)
+    const bg = this.add.image(LOG_PANEL_W / 2, LOG_PANEL_H / 2, "ui-log-panel")
+      .setDisplaySize(LOG_PANEL_W, LOG_PANEL_H);
+    const bgStroke = this.add.rectangle(LOG_PANEL_W / 2, LOG_PANEL_H / 2, LOG_PANEL_W, LOG_PANEL_H, 0x000000, 0)
       .setStrokeStyle(2, 0x8a6240);
     const title = this.add.text(LOG_PAD, 8, "战斗日志", { fontSize: "14px", color: "#e6d3b0" });
     const closeTx = this.add.text(LOG_PANEL_W - LOG_PAD, 10, "关闭", {
@@ -239,7 +243,7 @@ export class BattleScene extends Phaser.Scene {
     this.input.on("pointerup", this.onLogPointerUp);
     this.input.on("pointerupoutside", this.onLogPointerUp);
 
-    this.logPanel.add([bg, title, closeTx, this.logContainer, this.logHit]);
+    this.logPanel.add([bg, bgStroke, title, closeTx, this.logContainer, this.logHit]);
   }
 
   private toggleLogPanel() {
@@ -316,8 +320,6 @@ export class BattleScene extends Phaser.Scene {
       spr.setDepth(400 - Math.round(m.x * 10));
       const bar = this.mobBars.get(m.id);
       if (m.hp <= 0) {
-        if (spr.anims.currentAnim?.key !== `e${m.kind}-down`) spr.play(`e${m.kind}-down`);
-        spr.setAlpha(0.45).setAngle(70);
         bar?.bg.setVisible(false);
         bar?.fill.setVisible(false);
       } else if (bar) {
@@ -404,10 +406,10 @@ export class BattleScene extends Phaser.Scene {
     const target = getLock(this.battle);
     if (target) {
       if (inRange(hero, target)) {
-        if (this.heroSpr.anims.currentAnim?.key === "hero-walk") this.heroSpr.play("hero-idle");
+        if (this.heroSpr.anims.currentAnim?.key === `hero-${this.classId}-walk`) this.heroSpr.play(`hero-${this.classId}-idle`);
         if (now >= hero.nextAt) this.doHeroAttack(now);
       } else {
-        if (this.heroSpr.anims.currentAnim?.key !== "hero-walk") this.heroSpr.play("hero-walk");
+        if (this.heroSpr.anims.currentAnim?.key !== `hero-${this.classId}-walk`) this.heroSpr.play(`hero-${this.classId}-walk`);
         moveToward(hero, target, dt);
       }
     }
@@ -511,7 +513,7 @@ export class BattleScene extends Phaser.Scene {
           done();
         };
         spr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, finishOnce);
-        this.time.delayedCall(700, finishOnce);
+        this.time.delayedCall(500, finishOnce);
       } else {
         done();
       }
@@ -576,24 +578,29 @@ export class BattleScene extends Phaser.Scene {
     if (this.over || this.battle.hero.hp <= 0) return;
     const target = getLock(this.battle);
     if (!target) return;
-    const save = loadSave();
-    this.heroSpr.play("hero-attack");
+    this.heroSpr.play(`hero-${this.classId}-attack`);
     const dmg = unitAttack(this.battle.hero, now, !!LEVELS[this.levelIndex].sword);
-    const hits = dealDamage(this.battle, target.id, dmg, false);
-    if (hits.length) playSfx(this, AUDIO_KEYS.hit);
-    for (const h of hits) {
-      const spr = this.mobSpr.get(h.id);
-      if (spr) {
-        this.flashHit(spr.x, spr.y);
-        this.floatNum(spr.x, spr.y, `-${h.dmg}`);
-      }
-    }
-    this.pushLog("普攻 " + hits.map((h: any) => `${h.dead ? "击倒" : "打中"} ${h.name} ${h.dmg}`).join("，"));
+    // damage on swing frame (attack-1 @ 10fps ≈ 100ms)
     this.battle.hero.nextAt = now + unitInterval(this.battle.hero, now);
-    this.heroSpr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      if (!this.over) this.heroSpr.play("hero-idle");
+    this.time.delayedCall(100, () => {
+      if (this.over || this.battle.hero.hp <= 0) return;
+      const tgt = getLock(this.battle) || target;
+      if (!tgt || tgt.hp <= 0) return;
+      const hits = dealDamage(this.battle, tgt.id, dmg, false);
+      if (hits.length) playSfx(this, AUDIO_KEYS.hit);
+      for (const h of hits) {
+        const spr = this.mobSpr.get(h.id);
+        if (spr) {
+          this.flashHit(spr.x, spr.y);
+          this.floatNum(spr.x, spr.y, `-${h.dmg}`);
+        }
+      }
+      this.pushLog("普攻 " + hits.map((h: any) => `${h.dead ? "击倒" : "打中"} ${h.name} ${h.dmg}`).join("，"));
+      void this.afterCombatHits(hits);
     });
-    void this.afterCombatHits(hits);
+    this.heroSpr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!this.over) this.heroSpr.play(`hero-${this.classId}-idle`);
+    });
   }
 
   private async afterCombatHits(hits: any[]) {
@@ -607,20 +614,23 @@ export class BattleScene extends Phaser.Scene {
     const spr = this.mobSpr.get(m.id);
     spr?.play(`e${m.kind}-attack`);
     const dmg = unitAttack(m, now, false);
-    const hit = strikeHero(this.battle, dmg);
-    playSfx(this, AUDIO_KEYS.hurt);
-    this.flashHit(this.heroSpr.x, this.heroSpr.y);
-    this.floatNum(this.heroSpr.x, this.heroSpr.y, `-${dmg}`, "#ff8a8a");
-    this.refreshHud();
-    let line = `${m.name} 打中 ${dmg}`;
-    if (hit.absorbed) line += `，护盾抵消 ${hit.absorbed}`;
-    if (hit.hp) line += `，生命 -${hit.hp}`;
-    this.pushLog(line);
     m.nextAt = now + unitInterval(m, now);
+    this.time.delayedCall(100, () => {
+      if (this.over || m.hp <= 0 || this.battle.hero.hp <= 0) return;
+      const hit = strikeHero(this.battle, dmg);
+      playSfx(this, AUDIO_KEYS.hurt);
+      this.flashHit(this.heroSpr.x, this.heroSpr.y);
+      this.floatNum(this.heroSpr.x, this.heroSpr.y, `-${dmg}`, "#ff8a8a");
+      this.refreshHud();
+      let line = `${m.name} 打中 ${dmg}`;
+      if (hit.absorbed) line += `，护盾抵消 ${hit.absorbed}`;
+      if (hit.hp) line += `，生命 -${hit.hp}`;
+      this.pushLog(line);
+      if (this.battle.hero.hp <= 0) this.finish(false);
+    });
     spr?.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       if (!this.over && m.hp > 0) spr.play(`e${m.kind}-idle`);
     });
-    if (this.battle.hero.hp <= 0) this.finish(false);
   }
 
   private async onBead(r: number, c: number) {

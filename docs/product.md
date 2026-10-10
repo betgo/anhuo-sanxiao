@@ -83,3 +83,8 @@
 - 音效：交换、三消、四连、五连、普攻命中、受击、技能、胜利、失败（短音，程序合成占位，`public/audio/`）。
 - 右上角静音按钮，同时关 BGM+音效；偏好 `localStorage`（`anhuo-sanxiao-muted`）。
 - 浏览器音频解锁：首次点「进入地牢」/开战/静音键。
+
+## 像素换皮（v2）
+- 角色/敌帧 48×48，珠 32×32，硬边；职业分 `hero-out/surv/ctrl-*`；敌 down×2。
+- 战斗页用 `bg-battle` + `board-panel`；日志按钮/弹层用 `ui-log-btn` / `ui-log-panel`。
+- 显示整数倍缩放（普通 48，领主 96）；攻击伤害对齐挥砍帧。
