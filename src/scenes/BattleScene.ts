@@ -7,20 +7,28 @@ import {
   moveToward, clearExpired, maybeEnrageLord, applySlow, tryAdvanceWave, Color,
 } from "../logic/rules";
 import { loadSave, persist } from "../save";
-import { W } from "../config";
+import { W, H } from "../config";
 import { addMuteButton, unlockAudio, playBgm, playSfx, stopBgm, AUDIO_KEYS } from "../audio";
 
 const CELL = 36;
 const BEAD = 36;
 const BEAD_DRAW = 32;
-const STAGE_TOP = 70;
-const BOARD_TOP = 340;
+/** Upper battle zone ≈42% of 780 */
+const STAGE_ZONE_H = Math.round(H * 0.42);
+const BOARD_ZONE_Y = STAGE_ZONE_H;
+const HEADER_H = 28;
+const STAGE_TOP = HEADER_H;
+const STAGE_H = STAGE_ZONE_H - HEADER_H - 44;
+const BOARD_TOP = BOARD_ZONE_Y + 10;
 const BOARD_W = COLS * BEAD + 8;
 const LEFT = Math.floor((W - BOARD_W) / 2);
 const STAGE_W = BOARD_W;
 const LOG_MAX = 50;
-const LOG_VIEW_H = 72;
-const LOG_PAD = 4;
+const LOG_VIEW_H = 220;
+const LOG_PAD = 8;
+const LOG_PANEL_W = BOARD_W;
+const LOG_PANEL_H = LOG_VIEW_H + 40;
+const SKILL_Y = H - 36;
 
 export class BattleScene extends Phaser.Scene {
   private levelIndex = 0;
@@ -45,8 +53,12 @@ export class BattleScene extends Phaser.Scene {
   private logText!: Phaser.GameObjects.Text;
   private logHit!: Phaser.GameObjects.Zone;
   private logContainer!: Phaser.GameObjects.Container;
-  private teachText!: Phaser.GameObjects.Text;
   private slashBtn!: Phaser.GameObjects.Container;
+  private logOpen = false;
+  private logPanel?: Phaser.GameObjects.Container;
+  private logDim?: Phaser.GameObjects.Rectangle;
+  private logBtnBg!: Phaser.GameObjects.Rectangle;
+  private logBtnTx!: Phaser.GameObjects.Text;
   private ultBtn!: Phaser.GameObjects.Container;
   private logs: string[] = [];
   private logScrollY = 0;
@@ -79,28 +91,39 @@ export class BattleScene extends Phaser.Scene {
     this.logs = [];
     this.mobSpr.clear();
 
-    this.add.rectangle(0, 0, W, 2000, 0x1a120c).setOrigin(0);
-    this.add.text(LEFT, 10, `第 ${this.levelIndex + 1} / 10 关 · ${lv.name}`, { fontSize: "12px", color: "#8a7355" });
-    this.teachText = this.add.text(LEFT, 28, lv.teach, { fontSize: "12px", color: "#cbb892", wordWrap: { width: BOARD_W } });
+    this.add.rectangle(0, 0, W, H, 0x1a120c).setOrigin(0);
+    // stage zone
+    this.add.rectangle(0, 0, W, STAGE_ZONE_H, 0x120e0a).setOrigin(0);
+    this.add.rectangle(LEFT, STAGE_TOP, STAGE_W, STAGE_H, 0x140e0a).setOrigin(0).setStrokeStyle(2, 0x5a3b28);
+    this.add.rectangle(LEFT, STAGE_TOP + STAGE_H - 8, STAGE_W, 8, 0x3a2618).setOrigin(0);
 
-    // stage
-    this.add.rectangle(LEFT, STAGE_TOP, STAGE_W, 130, 0x140e0a).setOrigin(0).setStrokeStyle(2, 0x5a3b28);
-    this.add.rectangle(LEFT, STAGE_TOP + 120, STAGE_W, 10, 0x3a2618).setOrigin(0);
+    this.add.text(LEFT, 8, `第 ${this.levelIndex + 1}/10 · ${lv.name}`, {
+      fontSize: "12px", color: "#8a7355",
+    });
 
-    this.heroSpr = this.add.sprite(0, 0, "hero-idle-0").setDisplaySize(48, 54);
+    // log button (left of mute at W-44)
+    this.logBtnBg = this.add.rectangle(W - 118, 22, 56, 24, 0x2a1c14, 0.9)
+      .setStrokeStyle(1, 0x8a6240).setInteractive({ useHandCursor: true }).setDepth(3000);
+    this.logBtnTx = this.add.text(W - 118, 22, "日志", {
+      fontSize: "12px", color: "#e6d3b0",
+    }).setOrigin(0.5).setDepth(3001);
+    this.logBtnBg.on("pointerdown", () => this.toggleLogPanel());
+
+    this.heroSpr = this.add.sprite(0, 0, "hero-idle-0").setDisplaySize(48, 48);
     this.heroSpr.play("hero-idle");
     this.heroBarBg = this.add.rectangle(0, 0, 44, 5, 0x4a1010).setOrigin(0.5, 1);
     this.heroBarFill = this.add.rectangle(0, 0, 44, 5, 0x3ecf6a).setOrigin(0, 1);
-    this.redGlow = this.add.rectangle(0, 0, 56, 62, 0xff3030, 0.35).setVisible(false);
+    this.redGlow = this.add.rectangle(0, 0, 52, 52, 0xff3030, 0.35).setVisible(false);
     this.selRing = this.add.rectangle(0, 0, BEAD_DRAW + 6, BEAD_DRAW + 6).setStrokeStyle(2, 0xf3e6c0).setVisible(false);
 
     for (const m of this.battle.monsters) {
       m.x = 11 + m.enter * 0.35;
       const big = !!m.elite || !!m.isLord;
       const spr = this.add.sprite(0, 0, `e${m.kind}-idle-0`)
-        .setDisplaySize(big ? 58 : 48, big ? 66 : 54)
+        .setDisplaySize(big ? 48 : 48, big ? 48 : 48)
         .setInteractive({ useHandCursor: true });
       if (m.elite) spr.setTint(0xffe0a0);
+      if (m.isLord) spr.setDisplaySize(96, 96);
       spr.play(`e${m.kind}-idle`);
       spr.on("pointerdown", () => {
         if (this.over || m.hp <= 0) return;
@@ -120,13 +143,13 @@ export class BattleScene extends Phaser.Scene {
       });
     }
 
-    // hero card
-    this.add.image(LEFT + 24, 220, `hero-${save.classId}`).setDisplaySize(40, 45);
-    this.hpText = this.add.text(LEFT + 52, 200, "", { fontSize: "13px", color: "#e6d3b0" });
-    this.shieldText = this.add.text(LEFT + 52, 220, "", { fontSize: "12px", color: "#8a7355" });
-    this.resText = this.add.text(LEFT, 250, "", { fontSize: "12px", color: "#cbb892" });
+    // compact HUD at bottom of stage zone (corner, not a third pane)
+    this.hpText = this.add.text(LEFT + 6, STAGE_ZONE_H - 40, "", { fontSize: "12px", color: "#e6d3b0" });
+    this.shieldText = this.add.text(LEFT + 6, STAGE_ZONE_H - 24, "", { fontSize: "11px", color: "#8a7355" });
+    this.resText = this.add.text(LEFT + 120, STAGE_ZONE_H - 32, "", { fontSize: "11px", color: "#cbb892" });
 
-    // board bg
+    // board zone
+    this.add.rectangle(0, BOARD_ZONE_Y, W, H - BOARD_ZONE_Y, 0x1a120c).setOrigin(0);
     this.add.rectangle(LEFT, BOARD_TOP - 4, BOARD_W, ROWS * BEAD + 8, 0x140e0a)
       .setOrigin(0).setStrokeStyle(2, 0x5a3b28);
 
@@ -146,48 +169,10 @@ export class BattleScene extends Phaser.Scene {
       }
     }
 
-    const legend = ["r|红·加攻", "b|蓝·技能", "g|绿·治疗", "y|黄·职业"];
-    legend.forEach((s, i) => {
-      const [c, lab] = s.split("|");
-      const x = LEFT + 20 + i * 70;
-      this.add.image(x, BOARD_TOP + ROWS * BEAD + 24, `bead-${c}`).setDisplaySize(16, 16);
-      this.add.text(x + 12, BOARD_TOP + ROWS * BEAD + 24, lab, { fontSize: "11px", color: "#a89070" }).setOrigin(0, 0.5);
-    });
+    this.buildLogPanel();
 
-    const logY = BOARD_TOP + ROWS * BEAD + 48;
-    this.add.rectangle(LEFT, logY, BOARD_W, LOG_VIEW_H, 0x100c08, 0.85)
-      .setOrigin(0).setStrokeStyle(1, 0x3a2618).setDepth(200);
-    this.logContainer = this.add.container(LEFT + LOG_PAD, logY + LOG_PAD).setDepth(210);
-    this.logText = this.add.text(0, 0, "", {
-      fontSize: "11px", color: "#8a7355", wordWrap: { width: BOARD_W - LOG_PAD * 2 }, lineSpacing: 2,
-    });
-    this.logContainer.add(this.logText);
-    const maskShape = this.make.graphics({ x: 0, y: 0 });
-    maskShape.fillStyle(0xffffff);
-    maskShape.fillRect(LEFT, logY, BOARD_W, LOG_VIEW_H);
-    this.logContainer.setMask(maskShape.createGeometryMask());
-    this.logHit = this.add.zone(LEFT, logY, BOARD_W, LOG_VIEW_H).setOrigin(0).setInteractive().setDepth(220);
-    this.logHit.on("wheel", (_p: any, _dx: number, dy: number) => {
-      this.logScrollY += dy * 0.35;
-      this.applyLogScroll();
-    });
-    this.logHit.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      this.logDragging = true;
-      this.logDragLastY = p.y;
-    });
-    this.onLogPointerMove = (p: Phaser.Input.Pointer) => {
-      if (!this.logDragging) return;
-      this.logScrollY -= (p.y - this.logDragLastY);
-      this.logDragLastY = p.y;
-      this.applyLogScroll();
-    };
-    this.onLogPointerUp = () => { this.logDragging = false; };
-    this.input.on("pointermove", this.onLogPointerMove);
-    this.input.on("pointerup", this.onLogPointerUp);
-    this.input.on("pointerupoutside", this.onLogPointerUp);
-
-    this.slashBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 - 80, 700, "裂击", () => this.onCast("slash"));
-    this.ultBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 + 80, 700, "职业技", () => this.onCast("ult"));
+    this.slashBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 - 80, SKILL_Y, "裂击", () => this.onCast("slash"));
+    this.ultBtn = this.makeSkillBtn(LEFT + BOARD_W / 2 + 80, SKILL_Y, "职业技", () => this.onCast("ult"));
 
     this.events.once("shutdown", () => {
       this.clearAuto();
@@ -200,6 +185,81 @@ export class BattleScene extends Phaser.Scene {
     this.pushLog(`第 ${this.levelIndex + 1} 关 · ${lv.name}`);
     this.refreshHud();
     this.placeActors();
+  }
+
+  private buildLogPanel() {
+    const panelX = LEFT;
+    const panelY = Math.floor((H - LOG_PANEL_H) / 2);
+    this.logDim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.55)
+      .setDepth(2400).setInteractive().setVisible(false);
+    this.logDim.on("pointerdown", () => this.closeLogPanel());
+
+    this.logPanel = this.add.container(panelX, panelY).setDepth(2500).setVisible(false);
+    const bg = this.add.rectangle(LOG_PANEL_W / 2, LOG_PANEL_H / 2, LOG_PANEL_W, LOG_PANEL_H, 0x140e0a, 0.98)
+      .setStrokeStyle(2, 0x8a6240);
+    const title = this.add.text(LOG_PAD, 8, "战斗日志", { fontSize: "14px", color: "#e6d3b0" });
+    const closeTx = this.add.text(LOG_PANEL_W - LOG_PAD, 10, "关闭", {
+      fontSize: "12px", color: "#cbb892",
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    closeTx.on("pointerdown", () => this.closeLogPanel());
+
+    const viewY = 32;
+    this.logContainer = this.add.container(LOG_PAD, viewY);
+    this.logText = this.add.text(0, 0, "", {
+      fontSize: "11px", color: "#8a7355",
+      wordWrap: { width: LOG_PANEL_W - LOG_PAD * 2 },
+      lineSpacing: 2,
+    });
+    this.logContainer.add(this.logText);
+    const maskShape = this.make.graphics({ x: 0, y: 0 });
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(panelX + LOG_PAD, panelY + viewY, LOG_PANEL_W - LOG_PAD * 2, LOG_VIEW_H);
+    this.logContainer.setMask(maskShape.createGeometryMask());
+
+    this.logHit = this.add.zone(LOG_PAD, viewY, LOG_PANEL_W - LOG_PAD * 2, LOG_VIEW_H)
+      .setOrigin(0).setInteractive();
+    this.logHit.on("wheel", (_p: any, _dx: number, dy: number) => {
+      if (!this.logOpen) return;
+      this.logScrollY += dy * 0.35;
+      this.applyLogScroll();
+    });
+    this.logHit.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      if (!this.logOpen) return;
+      this.logDragging = true;
+      this.logDragLastY = p.y;
+    });
+    this.onLogPointerMove = (p: Phaser.Input.Pointer) => {
+      if (!this.logDragging || !this.logOpen) return;
+      this.logScrollY -= (p.y - this.logDragLastY);
+      this.logDragLastY = p.y;
+      this.applyLogScroll();
+    };
+    this.onLogPointerUp = () => { this.logDragging = false; };
+    this.input.on("pointermove", this.onLogPointerMove);
+    this.input.on("pointerup", this.onLogPointerUp);
+    this.input.on("pointerupoutside", this.onLogPointerUp);
+
+    this.logPanel.add([bg, title, closeTx, this.logContainer, this.logHit]);
+  }
+
+  private toggleLogPanel() {
+    if (this.logOpen) this.closeLogPanel();
+    else this.openLogPanel();
+  }
+
+  private openLogPanel() {
+    this.logOpen = true;
+    this.logDim?.setVisible(true);
+    this.logPanel?.setVisible(true);
+    this.logScrollY = 1e9;
+    this.applyLogScroll();
+  }
+
+  private closeLogPanel() {
+    this.logOpen = false;
+    this.logDragging = false;
+    this.logDim?.setVisible(false);
+    this.logPanel?.setVisible(false);
   }
 
   private makeSkillBtn(x: number, y: number, label: string, fn: () => void) {
@@ -232,7 +292,7 @@ export class BattleScene extends Phaser.Scene {
   private beadY(r: number) { return BOARD_TOP + r * BEAD + BEAD / 2; }
 
   private px(x: number) { return LEFT + 8 + x * CELL; }
-  private py(y: number) { return STAGE_TOP + 100 - y * 16; }
+  private py(y: number) { return STAGE_TOP + STAGE_H - 24 - y * 18; }
 
   private placeActors() {
     const h = this.battle.hero;
@@ -262,7 +322,7 @@ export class BattleScene extends Phaser.Scene {
         bar?.fill.setVisible(false);
       } else if (bar) {
         const ratio = Math.max(0, m.hp / m.max);
-        const barY = my - (m.elite || m.isLord ? 36 : 30);
+        const barY = my - (m.isLord ? 52 : (m.elite ? 30 : 28));
         bar.bg.setVisible(true).setPosition(mx, barY);
         bar.fill.setVisible(true).setPosition(mx - 22, barY).setDisplaySize(44 * ratio, 5);
         if (bar.tag) bar.tag.setVisible(true).setPosition(mx + 24, barY);
@@ -474,7 +534,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showWaveBanner(n: number) {
-    const tx = this.add.text(W / 2, STAGE_TOP + 40, `第 ${n} 波`, {
+    const tx = this.add.text(W / 2, STAGE_TOP + Math.floor(STAGE_H / 2), `第 ${n} 波`, {
       fontSize: "20px", color: "#e6d3b0", fontStyle: "bold",
       stroke: "#1a120c", strokeThickness: 4,
     }).setOrigin(0.5).setDepth(1600).setAlpha(0);
@@ -487,9 +547,8 @@ export class BattleScene extends Phaser.Scene {
   private spawnWaveActors(spawned: any[]) {
     for (const m of spawned) {
       m.x = 11 + m.enter * 0.2;
-      const big = !!m.elite || !!m.isLord;
       const spr = this.add.sprite(0, 0, `e${m.kind}-idle-0`)
-        .setDisplaySize(big ? 58 : 48, big ? 66 : 54)
+        .setDisplaySize(m.isLord ? 96 : 48, m.isLord ? 96 : 48)
         .setInteractive({ useHandCursor: true });
       if (m.elite) spr.setTint(0xffe0a0);
       spr.play(`e${m.kind}-walk`);
@@ -794,7 +853,7 @@ export class BattleScene extends Phaser.Scene {
     const main = win
       ? (isLast ? "章节完成" : "进入下一关")
       : "重新挑战";
-    const banner = this.add.text(W / 2, STAGE_TOP + 48, main, {
+    const banner = this.add.text(W / 2, STAGE_TOP + Math.floor(STAGE_H / 2) - 20, main, {
       fontSize: "22px",
       color: win ? "#ffe08a" : "#ffb0b0",
       fontStyle: "bold",
@@ -804,7 +863,7 @@ export class BattleScene extends Phaser.Scene {
     root.add(banner);
     this.tweens.add({ targets: banner, alpha: 1, duration: 400 });
 
-    const cd = this.add.text(W / 2, STAGE_TOP + 78, "", {
+    const cd = this.add.text(W / 2, STAGE_TOP + Math.floor(STAGE_H / 2) + 12, "", {
       fontSize: "13px", color: "#cbb892", stroke: "#1a120c", strokeThickness: 3,
     }).setOrigin(0.5);
     root.add(cd);

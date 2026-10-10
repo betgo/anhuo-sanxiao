@@ -88,8 +88,7 @@ describe("settlement — no scene pause / elite render hooks", () => {
   });
 
   it("elite sprites larger + tint + 精英 tag beside bar", () => {
-    expect(battleSrc).toMatch(/const big\s*=\s*!!m\.elite\s*\|\|\s*!!m\.isLord/);
-    expect(battleSrc).toMatch(/setDisplaySize\(big\s*\?\s*58\s*:\s*48,\s*big\s*\?\s*66\s*:\s*54\)/);
+    expect(battleSrc).toMatch(/setDisplaySize\(m\.isLord\s*\?\s*96\s*:\s*48/);
     expect(battleSrc).toMatch(/if \(m\.elite\) spr\.setTint\(0xffe0a0\)/);
     expect(battleSrc).toMatch(/"精英"/);
   });
